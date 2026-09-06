@@ -6,9 +6,6 @@
 <title>The Undercroft — Prototype</title>
 <link rel="icon" href="data:,">
 <style>
-/* ============================================================
-   1. CSS + overlay DOM
-   ============================================================ */
 html, body { margin: 0; height: 100%; background: #000; overflow: hidden;
   font-family: ui-monospace, Menlo, Consolas, "Liberation Mono", monospace; color: #d8cfc0; }
 [hidden] { display: none !important; }
@@ -24,21 +21,29 @@ html, body { margin: 0; height: 100%; background: #000; overflow: hidden;
 .cd { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #e8a23a; margin-left: 6px; vertical-align: middle; }
 .cd.off { background: #3a2f22; }
 #cds { margin-left: 10px; font-size: 11px; color: #a89878; }
+#sound { color: #d23a2a; }
 #tr { position: absolute; right: 16px; top: 14px; text-align: right; font-size: 13px; line-height: 1.7; text-shadow: 0 0 4px #000; }
+#contracts { white-space: pre-line; color: #a89878; font-size: 12px; }
 #hint { position: absolute; left: 0; right: 0; bottom: 12%; text-align: center; font-size: 15px; letter-spacing: .5px; text-shadow: 0 0 6px #000, 0 0 2px #000; }
 #dot { position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px 0 0 -2px; background: #fff9; border-radius: 50%; }
 #pause { position: absolute; left: 0; right: 0; top: 45%; text-align: center; font-size: 18px; color: #fff; text-shadow: 0 0 8px #000; }
+#minimap { position: absolute; right: 16px; bottom: 16px; width: 200px; height: 200px; background: #000a; border: 1px solid #5a4a30; image-rendering: pixelated; }
 #vignette { z-index: 1; opacity: 0; background: radial-gradient(ellipse at center, transparent 35%, #000 100%); }
 #vignette.red { background: radial-gradient(ellipse at center, #40000088 10%, #600000 100%); }
 #flashfx { z-index: 3; background: #fff; opacity: 0; }
 #fade { z-index: 4; background: #000; opacity: 0; }
 #toast { position: fixed; left: 0; right: 0; bottom: 6%; text-align: center; font-size: 14px; color: #ffd59a;
-  opacity: 0; transition: opacity .3s; pointer-events: none; text-shadow: 0 0 6px #000; z-index: 3; }
+  opacity: 0; transition: opacity .3s; pointer-events: none; text-shadow: 0 0 6px #000; z-index: 6; /* above the menus: "Save wiped." is read on the main menu */ }
 .screen { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
   background: #000d; cursor: pointer; z-index: 5; }
 .screen .box { max-width: 580px; padding: 24px 32px; border: 1px solid #5a4a30; background: #0a0806; }
+#menu { background: #0009; cursor: default; }
+#menu .box { min-width: 360px; }
+#menubody div { font-size: 13px; line-height: 1.7; }
+#menubody .dim { color: #8a7a5a; }
 h1 { font-size: 26px; letter-spacing: 5px; margin: 0 0 12px; color: #ffb265; font-weight: normal; }
 #death h1 { color: #d23a2a; }
+#menu h1 { font-size: 18px; letter-spacing: 3px; }
 p { line-height: 1.5; font-size: 13px; margin: 8px 0; }
 table { font-size: 12px; border-collapse: collapse; margin: 12px 0; }
 td { padding: 2px 14px 2px 0; vertical-align: top; }
@@ -46,6 +51,29 @@ td:first-child { color: #ffb265; white-space: nowrap; }
 .cta { margin-top: 14px; color: #fff; text-align: center; animation: pulse 1.6s infinite; }
 @keyframes pulse { 50% { opacity: .35; } }
 .small { font-size: 11px; color: #8a7a5a; text-align: center; margin-top: 10px; }
+/* list menus (main menu + pause menu) */
+.mmscreen { cursor: default; }
+#pausemenu { background: #0009; }
+.box.mm { min-width: 420px; max-width: 620px; }
+.box.mm .tagline { color: #a89878; margin-bottom: 14px; }
+.mtext p { color: #d8cfc0; }
+.mtable table { margin: 6px 0 10px; }
+.mtable td { padding: 1px 14px 1px 0; }
+.mlist { margin: 10px 0 4px; }
+.mi { display: flex; align-items: baseline; gap: 12px; padding: 5px 10px; border: 1px solid transparent; cursor: pointer;
+  font-size: 14px; letter-spacing: .5px; line-height: 1.5; user-select: none; }
+.mi .mk { color: #8a7a5a; width: 28px; flex: none; font-size: 12px; }
+.mi .ml { color: #d8cfc0; }
+.mi .mn { color: #8a7a5a; font-size: 11px; margin-left: auto; padding-left: 12px; text-align: right; }
+.mi.sel { border-color: #5a4a30; background: #1a1510; }
+.mi.sel .ml { color: #ffb265; }
+.mi.sel .mk { color: #ffb265; }
+.mi.sel::before { content: '▸'; color: #ffb265; margin-right: -4px; }
+.mi:not(.sel)::before { content: ' '; width: 9px; display: inline-block; }
+.mi.dis { cursor: not-allowed; }
+.mi.dis .ml, .mi.dis .mk { color: #5a5048; }
+.mi.danger .ml { color: #d27a5a; }
+.mi.danger.sel .ml { color: #ff8a5a; }
 </style>
 <script type="importmap">
 { "imports": {
@@ -61,36 +89,28 @@ td:first-child { color: #ffb265; white-space: nowrap; }
 <div id="hud" class="ov" hidden>
   <div id="tl">
     <div><span id="oilbar"><span id="oilfill" style="display:block"></span></span><span id="oilnum">50</span></div>
-    <div><span id="lamp">LAMP ON</span><span id="cds">flash<i id="cdq" class="cd"></i> lantern<i id="cdr" class="cd"></i></span></div>
+    <div><span id="lamp">LAMP ON</span><span id="cds">flash<i id="cdq" class="cd"></i> lantern<i id="cdr" class="cd"></i></span><span id="sound"></span></div>
   </div>
-  <div id="tr"><div id="carried">Carried: nothing</div><div id="flamehud">Flame: tier 1 (0/6)</div></div>
+  <div id="tr"><div id="carried">Carried: nothing</div><div id="flamehud">Flame: tier 1 (0/6)</div><div id="contracts"></div></div>
   <div id="hint"></div>
   <div id="dot"></div>
-  <div id="pause" hidden>paused — click to resume</div>
+  <div id="pause" hidden>mouse released — click to capture it</div>
+  <canvas id="minimap" width="200" height="200" hidden></canvas>
 </div>
 <div id="flashfx" class="ov"></div>
 <div id="fade" class="ov"></div>
 <div id="toast"></div>
 
-<div id="title" class="screen">
-  <div class="box">
+<div id="title" class="screen mmscreen">
+  <div class="box mm">
     <h1>THE UNDERCROFT</h1>
-    <p>The Last Lantern is nearly out. Below the vault lies a drowned ruin, black as pitch, and something
-      lives in it that is drawn to moving light. Carry your handlamp down, gather relics and oil, and bring
-      them back to the flame. Every flask you burn on the way is one you cannot bank — and every flask
-      you bank pushes the dark a little further from home.</p>
-    <table>
-      <tr><td>Mouse</td><td>Look (click to lock; arrow keys also turn)</td></tr>
-      <tr><td>W A S D / Shift</td><td>Move / sprint (sprinting makes noise)</td></tr>
-      <tr><td>F</td><td>Douse or light the handlamp (dark = stealth, burns nothing)</td></tr>
-      <tr><td>Q</td><td>Flash — 15 oil, staggers the hunter in front of you</td></tr>
-      <tr><td>R</td><td>Plant lantern — 20 oil, a pool of light it will not enter</td></tr>
-      <tr><td>E</td><td>Pick up / bank at the stairs / descend</td></tr>
-      <tr><td>T</td><td>Pour a carried flask into the lamp (+25 oil)</td></tr>
-      <tr><td>Esc</td><td>Release the mouse (pause)</td></tr>
-    </table>
-    <div class="cta">Click to begin</div>
-    <div class="small">Die and you drop what you carry as a bundle. The flame remembers what you banked.</div>
+    <p class="tagline">The Last Lantern is nearly out. Below the vault lies a drowned ruin, black as pitch, and something
+      lives in it that is drawn to moving light. Carry your handlamp down, bring back relics and oil, and feed the flame.</p>
+    <div id="mmsub" class="small" hidden></div>
+    <div id="mmtext" class="mtext" hidden></div>
+    <div id="mmtable" class="mtable" hidden></div>
+    <div id="mmlist" class="mlist"></div>
+    <div id="mmfoot" class="small"></div>
   </div>
 </div>
 
@@ -103,1005 +123,24 @@ td:first-child { color: #ffb265; white-space: nowrap; }
   </div>
 </div>
 
-<script type="module">
-import * as THREE from 'three';
+<div id="pausemenu" class="screen mmscreen" hidden>
+  <div class="box mm">
+    <h1 id="pmtitle">PAUSED</h1>
+    <div id="pmtext" class="mtext" hidden></div>
+    <div id="pmtable" class="mtable" hidden></div>
+    <div id="pmlist" class="mlist"></div>
+    <div id="pmfoot" class="small"></div>
+  </div>
+</div>
 
-/* ============================================================
-   2. Constants / tuning table
-   ============================================================ */
-const HUB_OX = 60;                       // hub grid x offset in world units
-const T = { FLOOR: 0, WALL: 1, PILLAR: 2, DEEP: 3, STAIRS: 4 };
-const CFG = {
-  walk: 3.5, sprint: 6.0, radius: 0.3, eye: 1.6, fov: 75, fovSprint: 82, lookKeys: 1.9,
-  oilMax: 100, startOil: [50, 60, 70, 80], burn: 0.5, deepBurnMul: 1.5, lowOil: 20,
-  lampColor: 0xffb265, lampInt: 9.0, lampDist: 16, deepLampMul: 0.6,
-  flashCost: 15, flashCd: 1.5, flashDur: 0.15, flashMul: 8, flashRange: 7, flashDot: 0.4, flashFx: 0.1,
-  lanternCost: 20, lanternCd: 1.0, lanternMax: 4, poolR: 2.5, flaskOil: 25,
-  interactR: 1.6, fadeT: 0.3, toastT: 2.5, dyingT: 1.2,
-};
-const H = { // hunter
-  speed: { WANDER: 1.8, INVESTIGATE: 3.0, CHASE: 4.3, STAGGERED: 0 },
-  eye: { WANDER: 0.4, INVESTIGATE: 0.8, CHASE: 1.5, STAGGERED: 0.05 },
-  catchR: 0.8, tick: 0.2, repath: 0.3, lampR: 12, sprintR: 9, walkR: 2.5, stillR: 1.0,
-  loseT: 3, staggerT: 3, dazeT: 4, unreachT: 6, waitT: 2, wanderCells: 10, farCells: 12,
-};
-const TIERS = [
-  { pts: 0,  int: 2.0, dist: 7,  msg: 'Only embers remain.' },
-  { pts: 6,  int: 3.5, dist: 11, msg: 'The flame stirs. The alcoves take shape.' },
-  { pts: 15, int: 5.5, dist: 16, msg: 'The flame grows. The vault is warm again.' },
-  { pts: 30, int: 8.0, dist: 24, msg: 'The Last Lantern burns bright.' },
-];
-const POINTS = { oil: 1, relic: 3, rich: 5 };
-const LABEL = { oil: 'oil flask', relic: 'relic', rich: 'rich relic', bundle: 'your lost bundle' };
-const SAVE_KEY = 'undercroft-proto';
+<div id="menu" class="screen" hidden>
+  <div class="box">
+    <h1 id="menutitle"></h1>
+    <div id="menubody"></div>
+    <div id="menufoot" class="small"></div>
+  </div>
+</div>
 
-/* ============================================================
-   3. Maps + parse to grids
-   ============================================================ */
-const ZONE_ROWS = [
-  '########################################',
-  '#DDDDDDDD###############DDDDDDDDDDDDDDD#',
-  '#DDDRDDDD###############DDDDDDDDDRDDDDD#',
-  '#DDDDDDDD###############DDDoDDDDDDDDDDD#',
-  '#DDDDDDDD###############DDDDDDDDDDDDDDD#',
-  '####.#############################.#####',
-  '#........#.............#...............#',
-  '#........#..P...P...P..#.....P...P.....#',
-  '#........#......H......#...............#',
-  '#..r......................o............#',
-  '#........#..P...P...P..#.....P...P.....#',
-  '#........#......r......#...............#',
-  '#........#.............#...............#',
-  '#........#.............#...............#',
-  '####.###########...#################.###',
-  '#........#..............#..............#',
-  '#..P.....#...P......P...#......P.......#',
-  '#........#..............#........o.....#',
-  '#........#..............#..............#',
-  '#........#...P......P...#......P...r...#',
-  '####.#####..............#..............#',
-  '#.o......#..............#..............#',
-  '#........#...P......P...#......P.......#',
-  '#........#..............#..............#',
-  '#........#..............######.#########',
-  '#........#...P......P...#..............#',
-  '#.........................o............#',
-  '#........#..............#..............#',
-  '#........#...P......P...#.........r....#',
-  '#..r.....#..............#..............#',
-  '#........#..............#..............#',
-  '#........#..............#............o.#',
-  '##################....##################',
-  '###############..........###############',
-  '###############.P......P.###############',
-  '###############..........###############',
-  '###############.P......P.###############',
-  '###############....S.....###############',
-  '###############..........###############',
-  '########################################',
-];
-const HUB_ROWS = [
-  '#################',
-  '#....#.....#....#',
-  '#....#.....#....#',
-  '#.......F.......#',
-  '#....#.....#....#',
-  '#....#.....#....#',
-  '######.....######',
-  '######..S..######',
-  '#################',
-];
-
-function parseMap(rows, ox, name) {
-  const h = rows.length, w = rows[0].length;
-  for (const r of rows) if (r.length !== w) console.warn(`map ${name}: ragged row "${r}"`);
-  const cells = new Uint8Array(w * h), pool = new Uint8Array(w * h);
-  const items = [];
-  let stairs = null, hunterSpawn = null, flame = null;
-  for (let z = 0; z < h; z++) for (let x = 0; x < w; x++) {
-    const ch = rows[z][x];
-    let t = T.FLOOR;
-    switch (ch) {
-      case '#': t = T.WALL; break;
-      case 'P': t = T.PILLAR; break;
-      case 'D': t = T.DEEP; break;
-      case 'S': t = T.STAIRS; stairs = { cx: x, cz: z }; break;
-      case 'o': items.push({ kind: 'oil', cx: x, cz: z }); break;
-      case 'r': items.push({ kind: 'relic', cx: x, cz: z }); break;
-      case 'R': t = T.DEEP; items.push({ kind: 'rich', cx: x, cz: z }); break;
-      case 'H': hunterSpawn = { cx: x, cz: z }; break;
-      case 'F': flame = { cx: x, cz: z }; break;
-      default: break;
-    }
-    cells[z * w + x] = t;
-  }
-  return { name, w, h, ox, cells, pool, items, stairs, hunterSpawn, flame };
-}
-const zone = parseMap(ZONE_ROWS, 0, 'zone');
-const hub = parseMap(HUB_ROWS, HUB_OX, 'hub');
-
-const idx = (m, cx, cz) => cz * m.w + cx;
-const inBounds = (m, cx, cz) => cx >= 0 && cz >= 0 && cx < m.w && cz < m.h;
-const cellType = (m, cx, cz) => (inBounds(m, cx, cz) ? m.cells[idx(m, cx, cz)] : T.WALL);
-const isSolid = (m, cx, cz) => { const t = cellType(m, cx, cz); return t === T.WALL || t === T.PILLAR; };
-const isBlocked = (m, cx, cz) => isSolid(m, cx, cz) || m.pool[idx(m, cx, cz)] === 1;
-const toCell = (m, wx, wz) => ({ cx: Math.floor(wx - m.ox), cz: Math.floor(wz) });
-const center = (m, cx, cz) => ({ x: m.ox + cx + 0.5, z: cz + 0.5 });
-const dist2d = (ax, az, bx, bz) => Math.hypot(ax - bx, az - bz);
-
-/* ============================================================
-   4. World build: renderer, scene, instanced blocks, markers,
-      flame, items, lights
-   ============================================================ */
-const canvas = document.getElementById('c');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
-renderer.setPixelRatio(1);
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x000000);
-scene.fog = new THREE.FogExp2(0x000000, 0.11);
-scene.add(new THREE.AmbientLight(0x0b0a14, 1));
-const camera = new THREE.PerspectiveCamera(CFG.fov, 1, 0.05, 40);
-camera.rotation.order = 'YXZ';
-scene.add(camera); // camera is in the graph so the lamp (its child) renders
-
-function buildBlocks(maps) {
-  const box = (w, h, d) => new THREE.BoxGeometry(w, h, d);
-  // blocks are 2% oversize so neighbouring instances overlap: separate boxes sharing an edge leave
-  // pixel-sized rasterization cracks at distance (very visible at the 1/3-res pixelated render)
-  const S = 1.02;
-  const kinds = {
-    floor:  { geo: box(S, 0.2, S),     y: -0.1, color: 0x6e675e, list: [] },
-    deep:   { geo: box(S, 0.2, S),     y: -0.1, color: 0x0c0c18, list: [] },
-    wall:   { geo: box(S, 3.4, S),     y: 1.5,  color: 0x5c564d, list: [] },
-    pillar: { geo: box(0.8, 3.4, 0.8), y: 1.5,  color: 0x7d7160, list: [] },
-    ceil:   { geo: box(S, 0.2, S),     y: 3.1,  color: 0x4d4841, list: [] },
-  };
-  for (const m of maps) for (let z = 0; z < m.h; z++) for (let x = 0; x < m.w; x++) {
-    const t = m.cells[idx(m, x, z)], p = center(m, x, z);
-    if (t === T.WALL) { kinds.wall.list.push(p); continue; }
-    (t === T.DEEP ? kinds.deep : kinds.floor).list.push(p);
-    kinds.ceil.list.push(p);
-    if (t === T.PILLAR) kinds.pillar.list.push(p);
-  }
-  const dummy = new THREE.Object3D(), col = new THREE.Color();
-  for (const k of Object.values(kinds)) {
-    if (!k.list.length) continue;
-    const mesh = new THREE.InstancedMesh(k.geo, new THREE.MeshLambertMaterial({ color: 0xffffff }), k.list.length);
-    k.list.forEach((p, i) => {
-      dummy.position.set(p.x, k.y, p.z); dummy.updateMatrix();
-      mesh.setMatrixAt(i, dummy.matrix);
-      col.set(k.color).multiplyScalar(1 + (Math.random() * 2 - 1) * 0.06); // ±6% jitter
-      mesh.setColorAt(i, col);
-    });
-    mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-    scene.add(mesh);
-  }
-}
-buildBlocks([zone, hub]);
-
-function buildStairs(m) {
-  const p = center(m, m.stairs.cx, m.stairs.cz);
-  const marker = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.06, 0.9),
-    new THREE.MeshLambertMaterial({ color: 0x1a2230, emissive: 0x2a4a9a, emissiveIntensity: 0.55 }));
-  marker.position.set(p.x, 0.03, p.z);
-  scene.add(marker);
-  const post = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.1, 0.12),
-    new THREE.MeshLambertMaterial({ color: 0x2a3444, emissive: 0x1a3060, emissiveIntensity: 0.35 }));
-  post.position.set(p.x + 0.4, 0.55, p.z + 0.4);
-  scene.add(post);
-}
-buildStairs(zone); buildStairs(hub);
-
-// --- the great flame (hub) ---
-const flame = { group: null, fire: null, light: null, base: null, rim: null, boxes: [], tier: 1, baseInt: 2 };
-function buildFlame(m) {
-  const p = center(m, m.flame.cx, m.flame.cz);
-  const g = new THREE.Group(); g.position.set(p.x, 0, p.z);
-  // stone brazier: its vertical faces get no light from the fire straight above, so it glows faintly
-  // with reflected ember light (emissive scaled by tier in applyTier)
-  const base = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.5, 1.2),
-    new THREE.MeshLambertMaterial({ color: 0x3a3028, emissive: 0xff6a28, emissiveIntensity: 0.12 }));
-  base.position.y = 0.25; g.add(base);
-  const rim = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.08, 1.0),
-    new THREE.MeshLambertMaterial({ color: 0x1a1210, emissive: 0xff7a30, emissiveIntensity: 0.45 }));
-  rim.position.y = 0.52; g.add(rim);
-  flame.base = base; flame.rim = rim;
-  const fire = new THREE.Group(); fire.position.y = 0.5;
-  let y = 0;
-  [0.6, 0.45, 0.32, 0.2].forEach((s, i) => {
-    const b = new THREE.Mesh(new THREE.BoxGeometry(s, s, s),
-      new THREE.MeshLambertMaterial({ color: 0x000000, emissive: 0xff6020, emissiveIntensity: 1 }));
-    b.position.y = y + s / 2; y += s * 0.8;
-    b.rotation.y = i * 0.7; // staggered so the stack reads as tongues, not one slab
-    fire.add(b); flame.boxes.push(b);
-  });
-  g.add(fire);
-  const light = new THREE.PointLight(0xffa040, 2, 7, 2); light.position.y = 1.2; g.add(light);
-  scene.add(g);
-  flame.group = g; flame.fire = fire; flame.light = light;
-}
-buildFlame(hub);
-
-// --- alcove sconces (hub) ---
-// The great flame alone cannot light the side alcoves: 8 u away, inverse-square + Lambert leaves their
-// walls at ~6/255, i.e. black. So each alcove holds a wall sconce that catches from the flame as it grows:
-// dark at tier 1 (alcoves invisible), lit progressively from tier 2 (DESIGN §3: alcoves emerge = progress).
-const SCONCE_INT = [0, 1.6, 3.2, 5.0];
-const sconces = [];
-function buildSconces(m) {
-  // one sconce per alcove: alcoves are the floor pockets left/right of the hall (cx < 5, cx > 11), row 3
-  for (const [cx, side] of [[1, 1], [m.w - 2, -1]]) {
-    const p = center(m, cx, 3);
-    const g = new THREE.Group(); g.position.set(p.x - side * 0.35, 0, p.z); // against the far wall
-    const cup = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.22, 0.22),
-      new THREE.MeshLambertMaterial({ color: 0x1a1210, emissive: 0xff7a30, emissiveIntensity: 0 }));
-    cup.position.y = 1.7; g.add(cup);
-    const light = new THREE.PointLight(0xffa040, 0, 7, 2); light.position.set(side * 0.3, 1.9, 0); g.add(light);
-    scene.add(g);
-    sconces.push({ cup, light, phase: Math.random() * 6 });
-  }
-}
-buildSconces(hub);
-
-function applyTier(tier) {
-  const t = TIERS[tier - 1];
-  flame.tier = tier; flame.baseInt = t.int; flame.light.distance = t.dist;
-  flame.fire.scale.setScalar(0.6 + 0.4 * (tier - 1));
-  const c = new THREE.Color(0xff6020).lerp(new THREE.Color(0xffd080), (tier - 1) / 3);
-  // gradient up the stack: dark-red base tongue to a bright yellow-white tip
-  flame.boxes.forEach((b, i) => b.material.emissive.copy(c).lerp(new THREE.Color(0xfff0c0), i * 0.22).multiplyScalar(0.7 + 0.1 * i));
-  flame.base.material.emissiveIntensity = 0.08 + 0.05 * (tier - 1);
-  flame.rim.material.emissiveIntensity = 0.35 + 0.12 * (tier - 1);
-  for (const s of sconces) { s.light.intensity = SCONCE_INT[tier - 1]; s.cup.material.emissiveIntensity = tier > 1 ? 0.3 + 0.2 * (tier - 2) : 0; }
-}
-
-// --- items ---
-const zoneItems = [];
-const ITEM_GEO = {
-  oil: new THREE.BoxGeometry(0.3, 0.3, 0.3), relic: new THREE.OctahedronGeometry(0.35),
-  rich: new THREE.OctahedronGeometry(0.5), bundle: new THREE.DodecahedronGeometry(0.3),
-};
-const ITEM_STYLE = {
-  oil: { color: 0xffa030, e: 0.5, y: 0.45 }, relic: { color: 0x60e0ff, e: 0.6, y: 0.6 },
-  rich: { color: 0xc070ff, e: 0.9, y: 0.7 }, bundle: { color: 0x9a9a9a, e: 0.5, y: 0.35 },
-};
-function spawnItem(kind, x, z, contents) {
-  const st = ITEM_STYLE[kind];
-  const mesh = new THREE.Mesh(ITEM_GEO[kind],
-    new THREE.MeshLambertMaterial({ color: st.color, emissive: st.color, emissiveIntensity: st.e }));
-  mesh.position.set(x, st.y, z);
-  scene.add(mesh);
-  const it = { kind, x, z, mesh, baseY: st.y, phase: Math.random() * 6.28, contents: contents || null };
-  zoneItems.push(it);
-  return it;
-}
-function removeItem(it) {
-  scene.remove(it.mesh); it.mesh.material.dispose();
-  const i = zoneItems.indexOf(it); if (i >= 0) zoneItems.splice(i, 1);
-}
-function resetZoneItems() {
-  for (const it of zoneItems.slice()) if (it.kind !== 'bundle') removeItem(it);
-  for (const d of zone.items) { const p = center(zone, d.cx, d.cz); spawnItem(d.kind, p.x, p.z); }
-}
-function updateItems(dt, time) {
-  for (const it of zoneItems) {
-    it.mesh.position.y = it.baseY + 0.08 * Math.sin(time * 2 + it.phase);
-    it.mesh.rotation.y += dt * 0.8;
-  }
-}
-
-/* ============================================================
-   5. Player controller + collision + lamp
-   ============================================================ */
-const game = {
-  state: 'TITLE', points: 0, bankedOil: 0, tier: 1,
-  dyingT: 0, lostLoot: 'nothing', lostAny: false, seenT: 0, hintOverride: '',
-  paused: false, locked: false, lockEver: false, time: 0,
-};
-const player = {
-  x: 0, z: 0, yaw: 0, pitch: 0, oil: 50, lampOn: true, sprinting: false, moving: false,
-  onDeep: false, inPool: false, carried: { oil: 0, relic: 0, rich: 0 },
-  flashCd: 0, lanternCd: 0, flashT: 0, map: hub,
-};
-const lamp = new THREE.PointLight(CFG.lampColor, CFG.lampInt, CFG.lampDist, 2);
-lamp.position.set(0.25, -0.2, 0);
-camera.add(lamp);
-
-const keys = new Set();
-
-function boxBlocked(m, x, z) {
-  const r = CFG.radius;
-  for (const [dx, dz] of [[-r, -r], [r, -r], [-r, r], [r, r]]) {
-    const c = toCell(m, x + dx, z + dz);
-    if (isSolid(m, c.cx, c.cz)) return true;
-  }
-  return false;
-}
-function moveAxis(dx, dz) {
-  const nx = player.x + dx, nz = player.z + dz;
-  if (!boxBlocked(player.map, nx, nz)) { player.x = nx; player.z = nz; }
-}
-function spawnAt(m, yaw) {
-  const p = center(m, m.stairs.cx, m.stairs.cz);
-  player.x = p.x; player.z = p.z; player.yaw = yaw; player.pitch = 0; player.map = m;
-}
-function updatePlayer(dt) {
-  // keyboard look (fallback when pointer lock is unavailable)
-  const rot = CFG.lookKeys * dt;
-  if (keys.has('ArrowLeft')) player.yaw += rot;
-  if (keys.has('ArrowRight')) player.yaw -= rot;
-  if (keys.has('ArrowUp')) player.pitch += rot;
-  if (keys.has('ArrowDown')) player.pitch -= rot;
-  player.pitch = Math.max(-1.5, Math.min(1.5, player.pitch));
-
-  // movement: W A S D, shift to sprint
-  let mx = 0, mz = 0;
-  if (keys.has('KeyW')) mz -= 1;
-  if (keys.has('KeyS')) mz += 1;
-  if (keys.has('KeyA')) mx -= 1;
-  if (keys.has('KeyD')) mx += 1;
-  const moving = mx !== 0 || mz !== 0;
-  player.sprinting = moving && (keys.has('ShiftLeft') || keys.has('ShiftRight'));
-  if (moving) {
-    const len = Math.hypot(mx, mz); mx /= len; mz /= len;
-    const s = Math.sin(player.yaw), c = Math.cos(player.yaw);
-    const vx = mx * c + mz * s, vz = -mx * s + mz * c;   // forward = (-sin, -cos)
-    const speed = player.sprinting ? CFG.sprint : CFG.walk;
-    moveAxis(vx * speed * dt, 0);
-    moveAxis(0, vz * speed * dt);
-  }
-  player.moving = moving;
-  if (!Number.isFinite(player.x) || !Number.isFinite(player.z)) spawnAt(player.map, 0);
-
-  // cell flags
-  const c = toCell(player.map, player.x, player.z);
-  player.onDeep = cellType(player.map, c.cx, c.cz) === T.DEEP;
-  player.inPool = game.state === 'ZONE' && lanterns.some(l => dist2d(l.x, l.z, player.x, player.z) <= CFG.poolR);
-
-  // camera
-  camera.position.set(player.x, CFG.eye, player.z);
-  camera.rotation.set(player.pitch, player.yaw, 0);
-  const targetFov = player.sprinting ? CFG.fovSprint : CFG.fov;
-  camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 8);
-  camera.updateProjectionMatrix();
-}
-function updateLamp(dt, time) {
-  // hub/title/dead: lamp forced off, no burn. It stays lit while DYING so the thing that took you
-  // reads as a silhouette against the lit floor rather than two eye-glints in the black.
-  if (game.state !== 'ZONE' && game.state !== 'DYING') player.lampOn = false;
-  if (player.lampOn) {
-    player.oil -= CFG.burn * (player.onDeep ? CFG.deepBurnMul : 1) * dt;
-    if (player.oil <= 0) { player.oil = 0; player.lampOn = false; }
-  }
-  if (!Number.isFinite(player.oil)) player.oil = 0;
-  player.flashCd = Math.max(0, player.flashCd - dt);
-  player.lanternCd = Math.max(0, player.lanternCd - dt);
-  player.flashT = Math.max(0, player.flashT - dt);
-  const amp = player.oil < 15 ? 0.07 * 3 : 0.07;
-  const flick = 0.93 + amp * Math.sin(time * 13);
-  let inten = player.lampOn ? CFG.lampInt * flick : 0;
-  if (player.flashT > 0) inten = CFG.lampInt * CFG.flashMul;
-  lamp.intensity = inten;
-  lamp.visible = inten > 0;
-  lamp.distance = CFG.lampDist * (player.onDeep ? CFG.deepLampMul : 1);
-}
-function toggleLamp() {
-  if (game.state !== 'ZONE') return false;
-  if (!player.lampOn && player.oil <= 0) { toast('The lamp is dry.'); return false; }
-  player.lampOn = !player.lampOn;
-  return true;
-}
-function topUp() {
-  if (game.state !== 'ZONE' || player.carried.oil <= 0 || player.oil >= CFG.oilMax) return false;
-  player.carried.oil -= 1;
-  player.oil = Math.min(CFG.oilMax, player.oil + CFG.flaskOil);
-  return true;
-}
-
-/* ============================================================
-   6. Flash / planted lanterns / pools
-   ============================================================ */
-const lanterns = [];
-const fx = { flashT: 0 };
-const ringGeo = new THREE.RingGeometry(CFG.poolR - 0.15, CFG.poolR, 40);
-ringGeo.rotateX(-Math.PI / 2);
-function plantLantern() {
-  if (game.state !== 'ZONE' || player.lanternCd > 0 || player.oil < CFG.lanternCost) return false;
-  player.oil -= CFG.lanternCost; player.lanternCd = CFG.lanternCd;
-  if (lanterns.length >= CFG.lanternMax) removeLantern(lanterns[0]);
-  const g = new THREE.Group(); g.position.set(player.x, 0, player.z);
-  const body = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.4, 0.25),
-    new THREE.MeshLambertMaterial({ color: 0x302010, emissive: 0xffc070, emissiveIntensity: 1 }));
-  body.position.y = 0.2; g.add(body);
-  const ring = new THREE.Mesh(ringGeo, new THREE.MeshLambertMaterial({
-    color: 0x000000, emissive: 0xffc070, emissiveIntensity: 0.6, side: THREE.DoubleSide }));
-  ring.position.y = 0.02; g.add(ring);
-  const light = new THREE.PointLight(0xffc070, 2.0, 6, 2); light.position.y = 0.6; g.add(light);
-  scene.add(g);
-  lanterns.push({ x: player.x, z: player.z, group: g, light, phase: Math.random() * 6 });
-  recomputePools(zone);
-  return true;
-}
-function removeLantern(l) {
-  scene.remove(l.group);
-  const i = lanterns.indexOf(l); if (i >= 0) lanterns.splice(i, 1);
-  recomputePools(zone);
-}
-function clearLanterns() { while (lanterns.length) removeLantern(lanterns[0]); }
-function recomputePools(m) {
-  m.pool.fill(0);
-  for (const l of lanterns) {
-    const c = toCell(m, l.x, l.z);
-    for (let dz = -3; dz <= 3; dz++) for (let dx = -3; dx <= 3; dx++) {
-      const cx = c.cx + dx, cz = c.cz + dz;
-      if (!inBounds(m, cx, cz)) continue;
-      const p = center(m, cx, cz);
-      if (dist2d(p.x, p.z, l.x, l.z) <= CFG.poolR) m.pool[idx(m, cx, cz)] = 1;
-    }
-  }
-}
-function updateLanterns(time) {
-  for (const l of lanterns) l.light.intensity = 2.0 * (0.93 + 0.07 * Math.sin(time * 13 + l.phase));
-}
-function flash() {
-  if (game.state !== 'ZONE' || player.flashCd > 0 || player.oil < CFG.flashCost) return false;
-  player.oil -= CFG.flashCost; player.flashCd = CFG.flashCd; player.flashT = CFG.flashDur; fx.flashT = CFG.flashFx;
-  if (hunter.active && hunter.state !== 'STAGGERED') {
-    const dx = hunter.x - player.x, dz = hunter.z - player.z, d = Math.hypot(dx, dz);
-    if (d > 0 && d <= CFG.flashRange) {
-      const dot = (dx * -Math.sin(player.yaw) + dz * -Math.cos(player.yaw)) / d;
-      if (dot > CFG.flashDot && los(zone, hunter.x, hunter.z, player.x, player.z)) stagger();
-    }
-  }
-  return true;
-}
-
-/* ============================================================
-   7. Hunter: BFS, LOS, FSM, mesh
-   ============================================================ */
-const hunter = {
-  active: false, state: 'WANDER', x: 0, z: 0, yaw: 0, path: [],
-  tickT: 0, repathT: 0, noStimT: 0, idleT: 1, waitT: 0, staggerT: 0, dazeT: 0, unreachT: 0,
-  unreachable: false, wanderFar: false, stim: false, lastKnown: { x: 0, z: 0 },
-  group: null, eyes: [],
-};
-function buildHunter() {
-  const g = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.BoxGeometry(0.6, 1.8, 0.6), new THREE.MeshLambertMaterial({ color: 0x050505 }));
-  body.position.y = 0.9; g.add(body);
-  const eyeGeo = new THREE.SphereGeometry(0.06, 8, 6);
-  for (const sx of [-0.12, 0.12]) {
-    const e = new THREE.Mesh(eyeGeo, new THREE.MeshLambertMaterial({ color: 0x000000, emissive: 0xff3a20, emissiveIntensity: 0.4 }));
-    e.position.set(sx, 1.5, -0.31); g.add(e); hunter.eyes.push(e);
-  }
-  g.visible = false; scene.add(g); hunter.group = g;
-}
-buildHunter();
-
-// BFS distance/parent field over the zone grid (4-neighbour, blocked = solid ∪ pool)
-function bfsField(m, sx, sz) {
-  const n = m.w * m.h;
-  const dist = new Int16Array(n).fill(-1), parent = new Int32Array(n).fill(-1), q = new Int32Array(n);
-  let qh = 0, qt = 0;
-  const s = idx(m, sx, sz); dist[s] = 0; q[qt++] = s;
-  while (qh < qt) {
-    const i = q[qh++], cx = i % m.w, cz = (i / m.w) | 0;
-    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-      const nx = cx + dx, nz = cz + dz;
-      if (!inBounds(m, nx, nz)) continue;
-      const j = idx(m, nx, nz);
-      if (dist[j] >= 0 || isBlocked(m, nx, nz)) continue;
-      dist[j] = dist[i] + 1; parent[j] = i; q[qt++] = j;
-    }
-  }
-  return { dist, parent };
-}
-function pathTo(m, field, ti) {
-  const out = [];
-  for (let i = ti; i >= 0 && field.parent[i] >= 0; i = field.parent[i]) out.push(i);
-  out.reverse();
-  return out.map(i => center(m, i % m.w, (i / m.w) | 0));
-}
-function nearestReachable(m, field, wx, wz) {
-  let best = -1, bd = Infinity;
-  for (let i = 0; i < field.dist.length; i++) {
-    if (field.dist[i] < 0) continue;
-    const p = center(m, i % m.w, (i / m.w) | 0), d = dist2d(p.x, p.z, wx, wz);
-    if (d < bd) { bd = d; best = i; }
-  }
-  return best;
-}
-// Grid DDA line of sight (Amanatides–Woo); blocked by walls/pillars
-function los(m, x0, z0, x1, z1) {
-  let cx = Math.floor(x0 - m.ox), cz = Math.floor(z0);
-  const ex = Math.floor(x1 - m.ox), ez = Math.floor(z1);
-  const dx = x1 - x0, dz = z1 - z0;
-  const stepX = dx > 0 ? 1 : -1, stepZ = dz > 0 ? 1 : -1;
-  const tdx = dx !== 0 ? Math.abs(1 / dx) : Infinity, tdz = dz !== 0 ? Math.abs(1 / dz) : Infinity;
-  const fx = x0 - m.ox - cx, fz = z0 - cz;
-  let tmx = dx !== 0 ? (dx > 0 ? 1 - fx : fx) * tdx : Infinity;
-  let tmz = dz !== 0 ? (dz > 0 ? 1 - fz : fz) * tdz : Infinity;
-  for (let i = 0; i < 200; i++) {
-    if (isSolid(m, cx, cz)) return false;
-    if (cx === ex && cz === ez) return true;
-    if (tmx < tmz) { cx += stepX; tmx += tdx; } else { cz += stepZ; tmz += tdz; }
-  }
-  return false;
-}
-
-function setHunterState(s) { hunter.state = s; }
-function resetHunter() {
-  const p = center(zone, zone.hunterSpawn.cx, zone.hunterSpawn.cz);
-  hunter.x = p.x; hunter.z = p.z; hunter.yaw = 0; hunter.path = [];
-  hunter.state = 'WANDER'; hunter.active = true; hunter.group.visible = true;
-  hunter.tickT = 0; hunter.repathT = 0; hunter.noStimT = 0; hunter.idleT = 1; hunter.waitT = 0;
-  hunter.staggerT = 0; hunter.dazeT = 0; hunter.unreachT = 0; hunter.unreachable = false; hunter.wanderFar = false;
-}
-function hunterCell() { return toCell(zone, hunter.x, hunter.z); }
-function sense() {
-  if (hunter.dazeT > 0) return false; // still dazzled after a flash: walks its far-wander leg blind
-  const d = dist2d(player.x, player.z, hunter.x, hunter.z);
-  if ((player.lampOn || player.flashT > 0) && d <= H.lampR && los(zone, hunter.x, hunter.z, player.x, player.z)) return true;
-  if (player.sprinting && d <= H.sprintR) return true;
-  if (player.moving && d <= H.walkR) return true;
-  return d <= H.stillR;
-}
-function pickWander(far) {
-  const hc = hunterCell(), field = bfsField(zone, hc.cx, hc.cz);
-  const pc = toCell(zone, player.x, player.z);
-  const cands = [];
-  let farthest = -1, fd = -1;
-  for (let i = 0; i < field.dist.length; i++) {
-    const d = field.dist[i]; if (d <= 0) continue;
-    const cx = i % zone.w, cz = (i / zone.w) | 0, pd = Math.hypot(cx - pc.cx, cz - pc.cz);
-    if (far) { if (pd >= H.farCells) cands.push(i); if (pd > fd) { fd = pd; farthest = i; } }
-    else if (d <= H.wanderCells) cands.push(i);
-  }
-  if (!cands.length && farthest >= 0) cands.push(farthest);
-  if (!cands.length) { hunter.idleT = 1; return; }
-  hunter.path = pathTo(zone, field, cands[(Math.random() * cands.length) | 0]);
-  hunter.idleT = 1 + Math.random() * 2;
-}
-function enterChase() {
-  if (hunter.state !== 'CHASE') game.seenT = 2;
-  setHunterState('CHASE');
-  hunter.noStimT = 0; hunter.unreachT = 0; hunter.unreachable = false; hunter.repathT = H.repath;
-}
-function chasePath() {
-  const hc = hunterCell(), field = bfsField(zone, hc.cx, hc.cz);
-  const pc = toCell(zone, player.x, player.z);
-  if (inBounds(zone, pc.cx, pc.cz) && field.dist[idx(zone, pc.cx, pc.cz)] >= 0) {
-    hunter.path = pathTo(zone, field, idx(zone, pc.cx, pc.cz)); hunter.unreachable = false;
-  } else {
-    hunter.unreachable = true;
-    const best = nearestReachable(zone, field, player.x, player.z);
-    hunter.path = best >= 0 ? pathTo(zone, field, best) : [];
-  }
-}
-function investigate(x, z) {
-  setHunterState('INVESTIGATE');
-  hunter.waitT = H.waitT;
-  const hc = hunterCell(), field = bfsField(zone, hc.cx, hc.cz);
-  const tc = toCell(zone, x, z);
-  const reachable = inBounds(zone, tc.cx, tc.cz) && field.dist[idx(zone, tc.cx, tc.cz)] >= 0;
-  const ti = reachable ? idx(zone, tc.cx, tc.cz) : nearestReachable(zone, field, x, z);
-  hunter.path = ti >= 0 ? pathTo(zone, field, ti) : [];
-  hunter.wanderFar = !reachable;
-}
-function stagger() {
-  setHunterState('STAGGERED');
-  hunter.staggerT = H.staggerT; hunter.dazeT = 0; hunter.path = [];
-}
-function hunterTick() {
-  hunter.dazeT = Math.max(0, hunter.dazeT - H.tick);
-  const stim = sense(); hunter.stim = stim;
-  if (stim) { hunter.lastKnown.x = player.x; hunter.lastKnown.z = player.z; hunter.noStimT = 0; }
-  const s = hunter.state;
-  if (s === 'STAGGERED') {
-    hunter.staggerT -= H.tick;
-    if (hunter.staggerT <= 0) { setHunterState('WANDER'); hunter.dazeT = H.dazeT; pickWander(true); }
-    return;
-  }
-  if (stim && s !== 'CHASE') { enterChase(); return; }
-  if (s === 'WANDER') {
-    if (!hunter.path.length) { hunter.idleT -= H.tick; if (hunter.idleT <= 0) pickWander(false); }
-  } else if (s === 'INVESTIGATE') {
-    if (!hunter.path.length) {
-      hunter.waitT -= H.tick;
-      if (hunter.waitT <= 0) { setHunterState('WANDER'); pickWander(hunter.wanderFar); hunter.wanderFar = false; }
-    }
-  } else if (s === 'CHASE') {
-    if (!stim) {
-      hunter.noStimT += H.tick;
-      if (hunter.noStimT >= H.loseT) { investigate(hunter.lastKnown.x, hunter.lastKnown.z); return; }
-    }
-    if (hunter.unreachable) {
-      hunter.unreachT += H.tick;
-      if (hunter.unreachT >= H.unreachT) { setHunterState('WANDER'); pickWander(true); }
-    } else hunter.unreachT = 0;
-  }
-}
-function moveHunterToward(tx, tz, speed, dt) {
-  const dx = tx - hunter.x, dz = tz - hunter.z, d = Math.hypot(dx, dz);
-  if (d < 1e-4) return d;
-  const step = Math.min(speed * dt, d);
-  hunter.x += dx / d * step; hunter.z += dz / d * step;
-  hunter.yaw = Math.atan2(-dx, -dz);
-  return d - step;
-}
-function updateHunter(dt) {
-  if (!hunter.active) return;
-  hunter.tickT += dt;
-  if (hunter.tickT >= H.tick) { hunter.tickT -= H.tick; hunterTick(); }
-  const s = hunter.state;
-  if (s === 'CHASE') {
-    hunter.repathT += dt;
-    if (hunter.repathT >= H.repath) { hunter.repathT = 0; chasePath(); }
-  }
-  if (s !== 'STAGGERED') {
-    const speed = H.speed[s];
-    if (hunter.path.length) {
-      const n = hunter.path[0];
-      if (moveHunterToward(n.x, n.z, speed, dt) < 0.1) hunter.path.shift();
-    } else if (s === 'CHASE') {
-      // path exhausted: close the last stretch directly, never into a pool
-      const pc = toCell(zone, player.x, player.z);
-      if (!hunter.unreachable && !player.inPool && !isBlocked(zone, pc.cx, pc.cz)) moveHunterToward(player.x, player.z, speed, dt);
-      else hunter.yaw = Math.atan2(-(player.x - hunter.x), -(player.z - hunter.z));
-    } else if (s === 'INVESTIGATE') {
-      hunter.yaw += 0.7 * dt; // slow sweep while waiting
-    }
-  }
-  if (!Number.isFinite(hunter.x) || !Number.isFinite(hunter.z)) resetHunter();
-  // catch
-  if (game.state === 'ZONE' && s !== 'STAGGERED' && !player.inPool &&
-      dist2d(hunter.x, hunter.z, player.x, player.z) <= H.catchR) die();
-  // mesh
-  hunter.group.position.set(hunter.x, 0, hunter.z);
-  hunter.group.rotation.y = hunter.yaw;
-  const ei = H.eye[hunter.state];
-  for (const e of hunter.eyes) e.material.emissiveIntensity = ei;
-}
-
-/* ============================================================
-   8. Items / bank / death / descend / tiers / transitions
-   ============================================================ */
-const fade = { a: 0, mode: null, cb: null };
-// a new transition may start during a fade-in, never during a fade-out (callback pending)
-function transition(cb) { if (fade.mode === 'out') return false; fade.mode = 'out'; fade.cb = cb; return true; }
-function updateFade(dt) {
-  if (fade.mode === 'out') {
-    fade.a = Math.min(1, fade.a + dt / CFG.fadeT);
-    if (fade.a >= 1) { const cb = fade.cb; fade.cb = null; fade.mode = 'in'; if (cb) cb(); }
-  } else if (fade.mode === 'in') {
-    fade.a = Math.max(0, fade.a - dt / CFG.fadeT);
-    if (fade.a <= 0) fade.mode = null;
-  }
-  el.fade.style.opacity = fade.a.toFixed(3);
-}
-
-function tierFor(points) { let t = 1; for (let i = 0; i < TIERS.length; i++) if (points >= TIERS[i].pts) t = i + 1; return t; }
-function checkTier(announce) {
-  const t = tierFor(game.points);
-  if (t !== game.tier || !announce) { game.tier = t; applyTier(t); if (announce) toast(TIERS[t - 1].msg); }
-}
-function save() {
-  try { localStorage.setItem(SAVE_KEY, JSON.stringify({ points: game.points, bankedOil: game.bankedOil })); } catch (e) { /* ignore */ }
-}
-function load() {
-  try {
-    const d = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
-    if (d && Number.isFinite(d.points)) { game.points = Math.max(0, d.points | 0); game.bankedOil = d.bankedOil | 0; }
-  } catch (e) { /* ignore */ }
-}
-function describe(c) {
-  const parts = [];
-  if (c.oil) parts.push(`${c.oil} flask${c.oil === 1 ? '' : 's'}`);
-  if (c.relic) parts.push(`${c.relic} relic${c.relic === 1 ? '' : 's'}`);
-  if (c.rich) parts.push(`${c.rich} rich relic${c.rich === 1 ? '' : 's'}`);
-  return parts.length ? parts.join(', ') : 'nothing';
-}
-
-function enterHub() {
-  game.state = 'HUB';
-  spawnAt(hub, 0);                 // stairs are south of the flame; yaw 0 looks north at it
-  player.lampOn = false; player.inPool = false;
-  hunter.active = false; hunter.group.visible = false;
-  checkTier(true);
-  // the HUD shows what the next run starts with, not the stale oil/cooldowns carried up from the zone
-  player.oil = CFG.startOil[game.tier - 1]; player.flashCd = 0; player.lanternCd = 0; player.flashT = 0;
-}
-function descend() {
-  if (game.state !== 'HUB') return false;
-  return transition(() => {
-    game.state = 'ZONE';
-    spawnAt(zone, 0);
-    player.oil = CFG.startOil[game.tier - 1]; player.lampOn = true;
-    player.flashCd = 0; player.lanternCd = 0; player.flashT = 0;
-    resetZoneItems(); clearLanterns(); resetHunter();
-    game.seenT = 0;
-  });
-}
-function bank() {
-  if (game.state !== 'ZONE') return false;
-  const c = player.carried;
-  const pts = c.oil * POINTS.oil + c.relic * POINTS.relic + c.rich * POINTS.rich;
-  const msg = pts > 0 ? `Banked: ${describe(c)} (+${pts})` : 'Nothing to bank. You return to the Lantern.';
-  return transition(() => {
-    game.points += pts; game.bankedOil += c.oil * CFG.flaskOil;
-    player.carried = { oil: 0, relic: 0, rich: 0 };
-    save();
-    toast(msg);
-    enterHub();
-  });
-}
-function interactTarget() {
-  if (fade.mode === 'out' || game.paused) return null;
-  const m = player.map;
-  if (game.state === 'ZONE') {
-    let best = null, bd = CFG.interactR;
-    const fx = -Math.sin(player.yaw), fz = -Math.cos(player.yaw);
-    for (const it of zoneItems) {
-      const dx = it.x - player.x, dz = it.z - player.z, d = Math.hypot(dx, dz);
-      if (d < bd && dx * fx + dz * fz > 0) { best = it; bd = d; }
-    }
-    if (best) return { type: 'item', item: best };
-  }
-  const s = center(m, m.stairs.cx, m.stairs.cz);
-  if (dist2d(s.x, s.z, player.x, player.z) <= CFG.interactR) {
-    if (game.state === 'ZONE') return { type: 'bank', empty: describe(player.carried) === 'nothing' };
-    if (game.state === 'HUB') return { type: 'descend' };
-  }
-  return null;
-}
-function pickup(it) {
-  if (it.kind === 'bundle') {
-    for (const k of ['oil', 'relic', 'rich']) player.carried[k] += it.contents[k] | 0;
-    toast(`Recovered your bundle: ${describe(it.contents)}`);
-  } else player.carried[it.kind] += 1;
-  removeItem(it);
-}
-function interact() {
-  const t = interactTarget();
-  if (!t) return false;
-  if (t.type === 'item') pickup(t.item);
-  else if (t.type === 'bank') bank();
-  else if (t.type === 'descend') descend();
-  return true;
-}
-function die() {
-  if (game.state !== 'ZONE') return false;
-  game.state = 'DYING'; game.dyingT = CFG.dyingT;
-  game.hintOverride = 'The dark took you.';
-  el.vignette.classList.add('red');
-  const c = player.carried, total = c.oil + c.relic + c.rich;
-  game.lostLoot = describe(c);
-  if (total > 0) {
-    const old = zoneItems.find(i => i.kind === 'bundle');
-    if (old) removeItem(old);
-    spawnItem('bundle', player.x, player.z, { ...c });
-  }
-  player.carried = { oil: 0, relic: 0, rich: 0 };
-  game.lostAny = total > 0;
-  keys.clear();
-  // death cam: turn to face what took you, and step it back so it reads as a silhouette with eyes
-  // rather than a point-blank slab (updatePlayer/updateHunter do not run while DYING, so set directly)
-  const dx = hunter.x - player.x, dz = hunter.z - player.z, d = Math.hypot(dx, dz) || 1;
-  const ux = dx / d, uz = dz / d;
-  player.yaw = Math.atan2(-ux, -uz); player.pitch = 0;
-  camera.rotation.set(0, player.yaw, 0);
-  const bx = player.x + ux * 1.8, bz = player.z + uz * 1.8, bc = toCell(zone, bx, bz);
-  if (!isSolid(zone, bc.cx, bc.cz)) { hunter.x = bx; hunter.z = bz; }
-  hunter.yaw = Math.atan2(ux, uz);
-  hunter.group.position.set(hunter.x, 0, hunter.z); hunter.group.rotation.y = hunter.yaw;
-  releaseLock(); // so the death overlay can receive the click
-  return true;
-}
-function showDeathScreen() {
-  game.state = 'DEAD';
-  el.deathmsg.textContent = `Lost: ${game.lostLoot}.`;
-  el.deathnote.textContent = game.lostAny
-    ? 'Your bundle lies where you fell. The flame at the Lantern is untouched.'
-    : 'You carried nothing down. The flame at the Lantern is untouched.';
-  el.death.hidden = false; el.hud.hidden = true;
-  releaseLock();
-}
-function returnToHub() {
-  if (game.state !== 'DEAD' || fade.mode === 'out') return false;
-  el.death.hidden = true; el.hud.hidden = false;
-  game.hintOverride = '';
-  requestLock();
-  return transition(() => { el.vignette.classList.remove('red'); enterHub(); });
-}
-function begin() {
-  if (game.state !== 'TITLE') return false;
-  el.title.hidden = true; el.hud.hidden = false;
-  fade.a = 1; fade.mode = 'in';
-  enterHub();
-  requestLock();
-  return true;
-}
-
-/* ============================================================
-   9. HUD + screens + input
-   ============================================================ */
-const el = {};
-for (const id of ['hud', 'oilfill', 'oilnum', 'lamp', 'cdq', 'cdr', 'carried', 'flamehud', 'hint', 'pause',
-  'vignette', 'flashfx', 'fade', 'toast', 'title', 'death', 'deathmsg', 'deathnote']) el[id] = document.getElementById(id);
-
-const toastQ = []; let toastT = 0;
-function toast(msg) { toastQ.push(msg); }
-function updateToast(dt) {
-  if (toastT > 0) { toastT -= dt; if (toastT <= 0) el.toast.style.opacity = '0'; else return; }
-  if (toastT <= -0.35 || (toastT <= 0 && !el.toast.textContent)) {
-    if (toastQ.length) { el.toast.textContent = toastQ.shift(); el.toast.style.opacity = '1'; toastT = CFG.toastT; }
-  } else if (toastT <= 0) toastT -= dt; // short gap between toasts
-}
-const textCache = {};
-function setText(key, s) { if (textCache[key] !== s) { textCache[key] = s; el[key].textContent = s; } }
-function hintText() {
-  if (game.hintOverride) return game.hintOverride;
-  if (game.state === 'HUB') {
-    const t = interactTarget();
-    return t && t.type === 'descend' ? '[E] Descend' : '';
-  }
-  if (game.state !== 'ZONE') return '';
-  // alarm · action prompt · lamp/safety status — shown together so none hides another
-  const parts = [];
-  if (game.seenT > 0) parts.push('It has seen you');
-  const t = interactTarget();
-  if (t && t.type === 'item') parts.push(`[E] Pick up ${LABEL[t.item.kind]}`);
-  else if (t && t.type === 'bank') parts.push(t.empty ? '[E] Return to the Lantern' : '[E] Bank loot');
-  if (player.oil <= 0) parts.push(player.carried.oil ? 'The lamp is dry — [T] pour a flask' : 'The lamp is dry');
-  else if (player.lampOn && player.oil < CFG.lowOil) parts.push('Lamp guttering');
-  else if (player.inPool) parts.push('Safe — it will not enter the light');
-  return parts.join('   ·   ');
-}
-function updateHUD() {
-  const oil = Math.max(0, Math.min(CFG.oilMax, player.oil));
-  el.oilfill.style.width = `${oil}%`;
-  el.oilfill.classList.toggle('low', oil < CFG.lowOil);
-  setText('oilnum', `${Math.ceil(oil)} / ${CFG.oilMax} oil`);
-  setText('lamp', game.state === 'HUB' ? 'LAMP OFF (safe)' : (player.lampOn ? 'LAMP ON' : 'LAMP OFF'));
-  el.cdq.classList.toggle('off', player.flashCd > 0 || player.oil < CFG.flashCost);
-  el.cdr.classList.toggle('off', player.lanternCd > 0 || player.oil < CFG.lanternCost);
-  const c = player.carried;
-  setText('carried', `Carried: ${c.oil || c.relic || c.rich ? `${c.oil} flask · ${c.relic} relic · ${c.rich} rich` : 'nothing'}`);
-  const next = TIERS[game.tier] ? `${game.points}/${TIERS[game.tier].pts}` : `${game.points} pts`;
-  setText('flamehud', `Flame: tier ${game.tier} (${next})`);
-  setText('hint', hintText());
-  el.pause.hidden = !game.paused;
-  // vignette: darkens as oil runs low; red while dying/dead
-  let v = 0;
-  if (game.state === 'ZONE' && player.oil < CFG.lowOil) v = 0.75 * (CFG.lowOil - player.oil) / CFG.lowOil;
-  if (game.state === 'DYING' || game.state === 'DEAD') v = 0.9;
-  el.vignette.style.opacity = v.toFixed(3);
-  el.flashfx.style.opacity = fx.flashT > 0 ? Math.min(1, fx.flashT / CFG.flashFx).toFixed(3) : '0';
-}
-
-// --- pointer lock + mouse look (graceful when unavailable) ---
-function requestLock() {
-  try {
-    const r = canvas.requestPointerLock && canvas.requestPointerLock();
-    if (r && typeof r.catch === 'function') r.catch(() => { game.locked = false; });
-  } catch (e) { game.locked = false; }
-}
-function releaseLock() {
-  try { if (document.pointerLockElement === canvas && document.exitPointerLock) document.exitPointerLock(); } catch (e) { /* ignore */ }
-}
-document.addEventListener('pointerlockchange', () => {
-  game.locked = document.pointerLockElement === canvas;
-  if (game.locked) game.lockEver = true;
-});
-document.addEventListener('pointerlockerror', () => { game.locked = false; });
-document.addEventListener('mousemove', e => {
-  if (!game.locked || game.state === 'TITLE' || game.state === 'DEAD') return;
-  const mx = e.movementX || 0, my = e.movementY || 0;
-  if (!Number.isFinite(mx) || !Number.isFinite(my)) return;
-  player.yaw -= mx * 0.002;
-  player.pitch = Math.max(-1.5, Math.min(1.5, player.pitch - my * 0.002));
-});
-canvas.addEventListener('click', () => {
-  if (game.state === 'HUB' || game.state === 'ZONE') requestLock();
-  else if (game.state === 'DEAD') returnToHub(); // a click retargeted to the canvas while still pointer-locked
-});
-el.title.addEventListener('click', begin);
-el.death.addEventListener('click', returnToHub);
-
-// --- keyboard ---
-window.addEventListener('keydown', e => {
-  if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
-  keys.add(e.code);
-  if (e.repeat) return;
-  const go = e.code === 'Enter' || e.code === 'Space';
-  if (game.state === 'TITLE') { if (go) begin(); return; }
-  if (game.state === 'DEAD') { if (go) returnToHub(); return; }
-  if (game.paused || fade.mode === 'out') return;
-  switch (e.code) {
-    case 'KeyF': toggleLamp(); break;
-    case 'KeyQ': flash(); break;
-    case 'KeyR': plantLantern(); break;
-    case 'KeyE': interact(); break;
-    case 'KeyT': topUp(); break;
-    default: break;
-  }
-});
-window.addEventListener('keyup', e => keys.delete(e.code));
-window.addEventListener('blur', () => keys.clear());
-
-/* ============================================================
-   10. Main loop + resize + debug API
-   ============================================================ */
-function resize() {
-  const w = Math.max(1, window.innerWidth | 0), h = Math.max(1, window.innerHeight | 0);
-  renderer.setSize(Math.max(1, Math.floor(w / 3)), Math.max(1, Math.floor(h / 3)), false);
-  camera.aspect = w / h; camera.updateProjectionMatrix();
-}
-window.addEventListener('resize', resize);
-resize();
-
-function updateFlame(time) {
-  const f = 0.93 + 0.07 * Math.sin(time * 13);
-  flame.light.intensity = flame.baseInt * f;
-  for (const s of sconces) s.light.intensity = SCONCE_INT[flame.tier - 1] * (0.93 + 0.07 * Math.sin(time * 11 + s.phase));
-  const s = 0.6 + 0.4 * (flame.tier - 1);
-  flame.fire.scale.set(s, s * (0.95 + 0.08 * Math.sin(time * 9.7)), s);
-  flame.boxes.forEach((b, i) => { // each tongue twists and sways on its own
-    b.rotation.y = i * 0.7 + 0.35 * Math.sin(time * (2.1 + i * 0.6) + i);
-    b.position.x = 0.04 * i * Math.sin(time * 3.3 + i * 1.7);
-    b.position.z = 0.04 * i * Math.cos(time * 2.7 + i * 0.9);
-  });
-}
-function update(dt) {
-  const time = game.time;
-  const playing = game.state === 'HUB' || game.state === 'ZONE';
-  game.paused = playing && game.lockEver && !game.locked;
-  updateFade(dt);
-  updateToast(dt);
-  if (playing && !game.paused) {
-    updatePlayer(dt);
-    updateLamp(dt, time);
-    if (game.state === 'ZONE') { updateHunter(dt); updateLanterns(time); }
-  } else if (game.state === 'DYING') {
-    updateLamp(dt, time);
-    game.dyingT -= dt;
-    if (game.dyingT <= 0) showDeathScreen();
-  } else if (game.state === 'TITLE' || game.state === 'DEAD') {
-    updateLamp(0, time);
-  }
-  game.seenT = Math.max(0, game.seenT - dt);
-  fx.flashT = Math.max(0, fx.flashT - dt);
-  updateItems(dt, time);
-  updateFlame(time);
-  updateHUD();
-}
-const clock = new THREE.Clock();
-function frame() {
-  requestAnimationFrame(frame);
-  let dt = clock.getDelta();
-  if (!Number.isFinite(dt) || dt < 0) dt = 1 / 60;
-  dt = Math.min(dt, 0.05);
-  game.time += dt;
-  update(dt);
-  renderer.render(scene, camera);
-}
-
-// initial state: title screen over a view of the hub
-load();
-game.tier = tierFor(game.points);
-applyTier(game.tier);
-spawnAt(hub, 0);
-camera.position.set(player.x, CFG.eye, player.z);
-frame();
-
-// debug / test API
-window.__game = {
-  get state() { return game.state; },
-  game, player, hunter, flame, map: zone, maps: { zone, hub }, lanterns, items: zoneItems, keys, cfg: CFG,
-  actions: { begin, descend, bank, flash, plantLantern, interact, topUp, toggleLamp, returnToHub, die, pickWander, los, bfsField },
-};
-window.__proto = window.__game;
-</script>
+<script type="module" src="./src/main.js"></script>
 </body>
 </html>

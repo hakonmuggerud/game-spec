@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Undercroft — Model Showcase</title>
+<link rel="icon" href="data:,">
+<style>
+html, body { margin: 0; height: 100%; background: #101014; overflow: hidden;
+  font-family: ui-monospace, Menlo, Consolas, "Liberation Mono", monospace; color: #d8cfc0; }
+#c { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+#labels { position: fixed; inset: 0; pointer-events: none; }
+.lbl { position: absolute; transform: translate(-50%, 0); font-size: 12px; white-space: nowrap;
+  text-shadow: 0 0 4px #000, 0 0 2px #000; color: #ffd59a; }
+.lbl small { color: #8a7a5a; }
+#bar { position: fixed; left: 12px; top: 10px; font-size: 12px; color: #a89878; text-shadow: 0 0 4px #000; line-height: 1.6; }
+#bar a { color: #ffd59a; }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="labels"></div>
+<div id="bar">Model showcase — <span id="count"></span> models · ?only=name · ?static=1 · ?lamp=1 (in-game lamp light only) · ?spin=0<br>
+  <span id="warn"></span></div>
+<script type="module">
+import * as THREE from 'three';
+import * as models from './src/models.js';
+
+const q = new URLSearchParams(location.search);
+const only = q.get('only');
+const isStatic = q.get('static') === '1';
+const spin = q.get('spin') !== '0' && !isStatic;
+const lampOnly = q.get('lamp') === '1';
+
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(1);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(lampOnly ? 0x000000 : 0x101014);
+const camera = new THREE.PerspectiveCamera(only ? 45 : 52, 1, 0.05, 100);
+
+// lighting: a soft fill so shapes read, plus a warm "handlamp" point light like the game's.
+if (!lampOnly) {
+  scene.add(new THREE.AmbientLight(0x404050, 1.2));
+  const hemi = new THREE.HemisphereLight(0x60607a, 0x201810, 0.8); scene.add(hemi);
+  const dir = new THREE.DirectionalLight(0xfff0e0, 1.2); dir.position.set(-3, 6, 4); scene.add(dir);
+}
+
+// order of the grid (row-major)
+const ORDER = only ? [only] : [
+  'hunter', 'hunter:fast', 'lamplighter', 'cartographer', 'keeper', 'deacon', 'lantern', 'bundle',
+  'flask', 'relic', 'richRelic', 'quest', 'stairs', 'elevator', 'gate', 'altar',
+  'water', 'flameBase', 'tram', 'workshop', 'oilPress', 'cartTable', 'shrine', 'board',
+];
+const cols = only ? 1 : 8, spacing = 3.4;
+const entries = [];
+const warn = [];
+ORDER.forEach((key, i) => {
+  const [name, variant] = key.split(':');
+  let g;
+  try { g = name === 'hunter' ? models.hunter({ profile: variant || 'base' }) : models.makeModel(name, { n: 3, locked: [false, true, true, false] }); }
+  catch (e) { warn.push(`${key}: ${e.message}`); return; }
+  const cx = i % cols, cz = Math.floor(i / cols);
+  const x = (cx - (cols - 1) / 2) * spacing, z = (cz - (Math.ceil(ORDER.length / cols) - 1) / 2) * spacing;
+  const pedestal = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.08, 3.2), new THREE.MeshLambertMaterial({ color: 0x1c1c22 }));
+  pedestal.position.set(x, -0.04 - 0.22 * (name === 'water'), z); scene.add(pedestal);
+  g.position.set(x, 0, z);
+  scene.add(g);
+  const light = new THREE.PointLight(0xffb265, lampOnly ? 9 : 2.5, lampOnly ? 16 : 6, 2);
+  light.position.set(x + 0.8, 1.6, z + 1.8); scene.add(light);
+  const boxes = g.userData.boxes;
+  if (boxes > 30) warn.push(`${key}: ${boxes} boxes (> 30)`);
+  // hunter eyes: show the CHASE intensity so they read
+  if (g.userData.eyes) g.userData.eyes.forEach(e => { e.material.emissiveIntensity = 1.5; });
+  entries.push({ key, name, g, x, z, boxes, height: g.userData.height });
+});
+document.getElementById('count').textContent = entries.length;
+document.getElementById('warn').textContent = warn.join(' · ');
+
+// labels
+const labels = document.getElementById('labels');
+for (const e of entries) {
+  const d = document.createElement('div'); d.className = 'lbl';
+  d.innerHTML = `${e.key}<br><small>${e.boxes} boxes · ${e.height} u</small>`; labels.appendChild(d); e.lbl = d;
+}
+const rows = Math.ceil(ORDER.length / cols);
+const target = new THREE.Vector3(0, 0.6, only ? 0 : 0.3);
+const dist = only ? 5.5 : cols * spacing * 0.86;
+function resize() {
+  const w = innerWidth, h = innerHeight;
+  renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize); resize();
+
+let t = 0, last = performance.now();
+const v = new THREE.Vector3();
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now; if (!isStatic) t += dt;
+  const ang = only ? 0.6 : 0.0;
+  camera.position.set(target.x + Math.sin(ang) * dist * 0.35, only ? 2.4 : dist * 0.72, target.z + dist * (only ? 0.9 : 0.55));
+  camera.lookAt(target);
+  for (const e of entries) {
+    if (spin && e.name !== 'water' && e.name !== 'tram' && e.name !== 'stairs') e.g.rotation.y = Math.PI + 0.35 + t * 0.4;
+    else if (!spin) e.g.rotation.y = Math.PI + (only ? 0.55 : 0.35);
+    if (e.g.userData.update) e.g.userData.update(t);
+    v.set(e.x, -0.1, e.z + 1.6).project(camera);
+    e.lbl.style.left = ((v.x + 1) / 2 * innerWidth) + 'px';
+    e.lbl.style.top = ((1 - v.y) / 2 * innerHeight) + 'px';
+  }
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+window.__models = {
+  ready: true, models, entries: entries.map(e => ({ key: e.key, boxes: e.boxes, height: e.height })), warn,
+  names: models.MODEL_NAMES, scene, camera, renderer,
+};
+</script>
+</body>
+</html>
