@@ -384,7 +384,9 @@ function onDeeper(lap, prev) {
   // wake dormant hunters whose lap the player is closing in on
   for (const d of r.dormant.slice()) {
     if (lap < d.wakeLap) continue;
-    d.h.active = true; if (d.h.group) d.h.group.visible = true; d.h.state = 'WANDER'; d.h.path = []; d.h.idleT = 0.5;
+    // a creature wakes in its own initial state (DRIFT / SENTRY / SUBMERGED / LIT), a hunter in WANDER
+    d.h.active = true; if (d.h.group) d.h.group.visible = true;
+    d.h.state = (d.h.prof && d.h.prof.initial) || 'WANDER'; d.h.path = []; d.h.idleT = 0.5;
     r.dormant.splice(r.dormant.indexOf(d), 1);
     ctx.events.emit('hunterWoken', { id: d.h.id, lap });
   }
@@ -392,7 +394,8 @@ function onDeeper(lap, prev) {
   for (const L of ENDGAME.extraLaps) {
     if (lap < L || r.spawnedLaps.has(L)) continue;
     r.spawnedLaps.add(L);
-    if (ctx.hunters.filter(h => h.active).length >= ENDGAME.maxHunters) continue;
+    // DESIGN.md §5.6: maxHunters counts the base/fast hunters only (creatures are placed, not reinforcements)
+    if (ctx.hunters.filter(h => h.active && (h.profile === 'base' || h.profile === 'fast')).length >= ENDGAME.maxHunters) continue;
     const cell = pickSpawnCell(lap);
     if (cell) spawnExtraHunter(cell, 'fast', lap);
   }

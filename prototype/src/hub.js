@@ -638,7 +638,10 @@ export function openBoard() {
   ZONE_ORDER.forEach((z, i) => {
     const lock = zoneLocked(z, s, t), meta = ZONES[z];
     if (lock) lines.push(`  [${i + 1}] ${meta.name} — locked: ${lock}`);
-    else lines.push(`[${i + 1}] ${meta.name}${z === sel ? '   ◆ next descent' : ''}`);
+    else {
+      lines.push(`[${i + 1}] ${meta.name}${z === sel ? '   ◆ next descent' : ''}`);
+      if (meta.threat) lines.push(`      ⚠ ${meta.threat}`);   // DESIGN.md §5.7: what waits down there
+    }
     for (const c of targets) if (c.zone === z) {
       const spot = c.cell && meta.spots ? meta.spots.find(sp => sp.cell[0] === c.cell[0] && sp.cell[1] === c.cell[1]) : null;
       lines.push(`      ◇ ${c.title}${spot ? ' — ' + spot.label : ''}${c.goal > 1 ? ` (${c.progress | 0}/${c.goal})` : ''}`);

@@ -160,11 +160,7 @@ function presenceVoice() {
   saw.connect(lp); sin.connect(lp); lp.connect(trem); trem.connect(g);
   if (pan) { g.connect(pan); pan.connect(state.master); } else g.connect(state.master);
   saw.start(); sin.start(); lfo.start();
-  return { g, lp, pan, target: 0, k: 0 };
-}
-function presenceFor(i) {
-  while (V.presence.length <= i) V.presence.push(presenceVoice());
-  return V.presence[i];
+  return { g, lp, pan, target: 0, k: 0, nodes: [saw, sin, lfo] };
 }
 
 /* ============================================================
@@ -286,12 +282,12 @@ export function init(c) {
   on('lantern', () => play('lantern'));
   on('pickup', ({ kind }) => play('pickup', { kind }));
   on('bank', ({ pts }) => { if (pts > 0) play('bank'); else play('uiClick'); });
-  on('hunterState', ({ state: s, prev }) => {
-    if (s !== 'CHASE' || prev === 'CHASE') return;
+  on('hunterState', ({ id, state: s, prev } = {}) => {
+    if (s !== 'CHASE' || prev === 'CHASE' || kindOf(profileOf(id)) !== 'growl') return;   // the roster has its own cues
     const t = ctx.state.time;
     if (t - state.lastSting >= AUDIO.stingGap) { state.lastSting = t; play('sting'); }
   });
-  on('death', () => play('death'));
+  on('death', ({ hunterId } = {}) => { if (!DEATH_BY[profileOf(hunterId)]) play('death'); });
   on('npcFreed', () => play('npcFreed'));
   on('npcCaught', () => play('npcCaught'));
   on('npcRescued', () => play('npcRescued'));
@@ -415,28 +411,8 @@ function tick(c, dt) {
     if (wg !== V.water.target) { V.water.target = wg; setTarget(V.water.g.gain, wg, t0, tau); }
   }
 
-  // hunter presence (one voice per hunter index, created lazily)
-  {
-    const hs = c.hunters || [];
-    const rx = Math.cos(p.yaw), rz = -Math.sin(p.yaw); // camera-right vector (forward = (-sin, -cos))
-    for (let i = 0; i < Math.max(hs.length, V.presence.length); i++) {
-      const h = hs[i], v = presenceFor(i);
-      let k = 0, pan = 0;
-      if (h && h.active && mode === 'ZONE') {
-        const dx = h.x - p.x, dz = h.z - p.z, d = Math.hypot(dx, dz);
-        k = clamp01(1 - d / AUDIO.presenceRange) * (TUNE.stateMul[h.state] !== undefined ? TUNE.stateMul[h.state] : 0.35);
-        if (d > 0.01) pan = Math.max(-1, Math.min(1, (dx * rx + dz * rz) / d)) * 0.8;
-      }
-      const g = AUDIO.presenceMax * k;
-      v.k = k;
-      if (Math.abs(g - v.target) > 0.0005 || (g === 0 && v.target !== 0)) {
-        v.target = g;
-        setTarget(v.g.gain, g, t0, tau);
-        setTarget(v.lp.frequency, 120 + 500 * k, t0, tau);
-      }
-      if (v.pan && k > 0) setTarget(v.pan.pan, pan, t0, tau);
-    }
-  }
+  // creature presence: one voice per hunter index, kind by profile (see the roster section below)
+  presenceTick(c, dt, t0);
 
   // hub flame: crackle + hum by tier, faded by distance
   {
@@ -480,6 +456,7 @@ export function stats() {
     lamp: V.lamp ? V.lamp.target : 0, water: V.water ? V.water.target : 0,
     hub: V.hub ? +V.hub.target.toFixed(4) : 0, hubHum: V.hub ? +V.hub.humTarget.toFixed(4) : 0,
     presence: V.presence.map(v => +v.target.toFixed(4)), presenceK: V.presence.map(v => +v.k.toFixed(3)),
+    presenceKind: V.presence.map(v => v.kind || 'growl'), lure: V.presence.map(v => +(v.lureTarget || 0).toFixed(4)),
     names: Object.keys(SOUNDS),
   };
   return r;
@@ -514,5 +491,297 @@ SOUNDS.menuOpen = (t0) => { note('triangle', 330, 0, t0, 0.1, 0.005, 0.12); note
     c.events.on('menuBack', () => play('menuBack'));
     c.events.on('pauseOpen', () => play('menuOpen'));
     c.events.on('title', () => play('menuBack'));
+  };
+}
+
+/* ============================================================
+   Creature roster (DESIGN.md §5) — per-profile presence voices + the new one-shots.
+   Presence voices (V.presence[i], one per hunter index, rebuilt when the profile at that index changes):
+     base/fast → growl (as before) · lampwight → whistle ("breath through a keyhole") · warden → stone grind that
+     scales with its sweep speed, a click at each reversal, treads in CHASE/RETURN · drowner → surge wash (the
+     Cistern water noise ×4, by its speed) + plops on a timer · falseLight → NO presence (silence is the lure); a
+     separate lure layer (fake crackle 0.6 × the lamp's + a faint glass chime) runs only while it is LIT and stops
+     the instant it goes dark; scrabbling at 12 Hz in POUNCE · brute → breathing drone; stride thuds come from
+     `creatureStep` events (g 0.35 × falloff ≤ 26 u).
+   One-shots hang off: hunterState (lampwight DRAWN sigh, brute CHASE roar, base/fast CHASE sting), lampSnuffed,
+   lanternSmashed, wardenAlert, wardenReturn, drownerSurge, drownerSink, falseLightPounce, falseLightReveal,
+   flashResisted, creatureStep, and death (per-killer variants). Everything is a no-op before the AudioContext exists.
+   ============================================================ */
+const CTUNE = {
+  whistle: { peak: 0.10, range: 20, mul: { DRIFT: 0.5, WANDER: 0.5, DRAWN: 1, CHASE: 1, SNUFF: 1, SATED: 0.4, STAGGERED: 0.1 } },
+  grind: { peak: 0.06, range: 14, sweep: 0.35, stepChase: 0.45, stepReturn: 0.6, stepRange: 14 },
+  wash: { peak: 0.08, range: 12, speed: 5, mul: { SURGE: 1, LURK: 0.5, SURFACING: 0.6, SINK: 0.4 }, plopMin: 2, plopMax: 5, plopRange: 12 },
+  lure: { range: 6, crackle: 0.6, chime: 0.012, tau: 0.02, scrabbleHz: 12, scrabbleRange: 12 },
+  breath: { peak: 0.12, range: 20, mul: { WANDER: 0.6, INVESTIGATE: 0.8, CHASE: 1 }, stepRange: 26, stepGain: 0.35 },
+  growlMul: TUNE.stateMul,
+};
+const KIND_OF = { base: 'growl', fast: 'growl', lampwight: 'whistle', warden: 'grind', drowner: 'wash', falseLight: 'lure', brute: 'breath' };
+const kindOf = (profile) => KIND_OF[profile] || 'growl';
+const profileOf = (id) => { const h = ctx && ctx.hunters && id != null ? ctx.hunters[id] : null; return h ? (h.profile || 'base') : 'base'; };
+const falloff = (d, range) => clamp01(1 - d / range);
+// pan of a world position relative to the player's facing (−1 left … +1 right), scaled 0.8 like the hunter voices
+function panAt(x, z) {
+  if (!ctx) return 0;
+  const p = ctx.player, dx = x - p.x, dz = z - p.z, d = Math.hypot(dx, dz);
+  if (d < 0.01) return 0;
+  const rx = Math.cos(p.yaw), rz = -Math.sin(p.yaw);
+  return Math.max(-1, Math.min(1, (dx * rx + dz * rz) / d)) * 0.8;
+}
+const distTo = (x, z) => ctx ? Math.hypot(x - ctx.player.x, z - ctx.player.z) : 0;
+
+/* ---------- voice builders: {kind, g, pan, target, k, nodes[], ...} ---------- */
+function voiceOut() {
+  const g = gain(0), pan = panner(0);
+  if (pan) { g.connect(pan); pan.connect(state.master); } else g.connect(state.master);
+  return { g, pan };
+}
+function whistleVoice() {
+  const { g, pan } = voiceOut();
+  const o = osc('sine', 660), vib = osc('sine', 4), vibG = gain(12), trem = gain(0.75), tremLfo = osc('sine', 0.2), tremG = gain(0.25);
+  vib.connect(vibG); vibG.connect(o.frequency);
+  tremLfo.connect(tremG); tremG.connect(trem.gain);
+  const bp = filt('bandpass', 660, 6);
+  o.connect(bp); bp.connect(trem); trem.connect(g);
+  o.start(); vib.start(); tremLfo.start();
+  return { kind: 'whistle', g, pan, target: 0, k: 0, nodes: [o, vib, tremLfo] };
+}
+function grindVoice() {
+  const { g, pan } = voiceOut();
+  const saw = osc('sawtooth', 28), lp = filt('lowpass', 90, 1.2);
+  saw.connect(lp); lp.connect(g); saw.start();
+  return { kind: 'grind', g, pan, target: 0, k: 0, nodes: [saw], lastYaw: null, lastDir: 0, stepT: 0, extStepT: -1e9 };
+}
+function washVoice() {
+  const { g, pan } = voiceOut();
+  const n = noiseSrc(), lp = filt('lowpass', 400, 0.5);
+  n.connect(lp); lp.connect(g); n.start();
+  return { kind: 'wash', g, pan, target: 0, k: 0, nodes: [n], lastX: null, lastZ: null, speed: 0, plopT: rnd(1, 3) };
+}
+function lureVoice() {
+  const { g, pan } = voiceOut();
+  const n = noiseSrc(), bp = filt('bandpass', 3000, 2), cg = gain(1);
+  n.connect(bp); bp.connect(cg); cg.connect(g); n.start();
+  const chime = gain(0.6), trem = gain(0.7), lfo = osc('sine', 0.9), lfoG = gain(0.3);
+  lfo.connect(lfoG); lfoG.connect(trem.gain);
+  const o1 = osc('sine', 1320), o2 = osc('sine', 1980); o2.detune.value = 5;
+  o1.connect(trem); o2.connect(trem); trem.connect(chime); chime.connect(g);
+  o1.start(); o2.start(); lfo.start();
+  return { kind: 'lure', g, pan, target: 0, k: 0, lureTarget: 0, nodes: [n, o1, o2, lfo], scrabT: 0 };
+}
+function breathVoice() {
+  const { g, pan } = voiceOut();
+  const o = osc('sine', 38), n = noiseSrc(), lp = filt('lowpass', 120, 0.8), lfo = osc('sine', 0.35), lfoG = gain(0.4), trem = gain(0.7);
+  lfo.connect(lfoG); lfoG.connect(trem.gain);
+  o.connect(trem); n.connect(lp); lp.connect(trem); trem.connect(g);
+  o.start(); n.start(); lfo.start();
+  return { kind: 'breath', g, pan, target: 0, k: 0, nodes: [o, n, lfo] };
+}
+function growlVoice() { const v = presenceVoice(); v.kind = 'growl'; v.nodes = []; return v; }
+const VOICE_BUILDERS = { growl: growlVoice, whistle: whistleVoice, grind: grindVoice, wash: washVoice, lure: lureVoice, breath: breathVoice };
+function stopVoice(v) {
+  try {
+    v.g.gain.cancelScheduledValues(0); v.g.gain.value = 0;
+    for (const n of v.nodes || []) { try { n.stop(); } catch (e) { /* ignore */ } }
+    setTimeout(() => { try { v.g.disconnect(); if (v.pan) v.pan.disconnect(); } catch (e) { /* ignore */ } }, 200);
+  } catch (e) { /* ignore */ }
+}
+// voiceFor(i, kind): the voice at index i, rebuilt when the kind changed.
+function voiceFor(i, kind) {
+  let v = V.presence[i];
+  if (v && v.kind !== kind) { stopVoice(v); v = null; }
+  if (!v) { v = VOICE_BUILDERS[kind](); v.kind = kind; }
+  V.presence[i] = v;
+  return v;
+}
+const setGain = (v, g, t0, tau) => {
+  if (Math.abs(g - v.target) > 0.0005 || (g === 0 && v.target !== 0)) { v.target = g; setTarget(v.g.gain, g, t0, tau); }
+};
+
+/* ---------- the per-frame presence tick (called from tick()) ---------- */
+function presenceTick(c, dt, t0) {
+  const tau = TUNE.tau, p = c.player, mode = c.state.mode, hs = c.hunters || [], live = mode === 'ZONE' && !c.state.paused;
+  for (let i = 0; i < Math.max(hs.length, V.presence.length); i++) {
+    const h = hs[i];
+    const kind = h ? kindOf(h.profile) : (V.presence[i] ? V.presence[i].kind : 'growl');
+    const v = voiceFor(i, kind);
+    const on = !!(h && h.active && mode === 'ZONE');
+    const d = on ? Math.hypot(h.x - p.x, h.z - p.z) : 1e9;
+    const pan = on ? panAt(h.x, h.z) : 0;
+    let g = 0, k = 0;
+    switch (kind) {
+      case 'growl': {
+        if (on) k = falloff(d, AUDIO.presenceRange) * (CTUNE.growlMul[h.state] !== undefined ? CTUNE.growlMul[h.state] : 0.35);
+        g = AUDIO.presenceMax * k;
+        if (Math.abs(g - v.target) > 0.0005 || (g === 0 && v.target !== 0)) { v.target = g; setTarget(v.g.gain, g, t0, tau); setTarget(v.lp.frequency, 120 + 500 * k, t0, tau); }
+        break;
+      }
+      case 'whistle': {
+        const T = CTUNE.whistle;
+        if (on) k = falloff(d, T.range) * (T.mul[h.state] !== undefined ? T.mul[h.state] : 0.5);
+        g = T.peak * k; setGain(v, g, t0, tau);
+        break;
+      }
+      case 'grind': {
+        const T = CTUNE.grind;
+        let facing = on ? h.yaw : 0;
+        if (on && h.group && h.group.userData && h.group.userData.head) facing += h.group.userData.head.rotation.y;
+        let speed = 0;
+        if (on && v.lastYaw !== null && dt > 0) {
+          let dy = facing - v.lastYaw; while (dy > Math.PI) dy -= Math.PI * 2; while (dy < -Math.PI) dy += Math.PI * 2;
+          speed = Math.abs(dy) / dt;
+          const dir = Math.abs(dy) > 1e-4 ? Math.sign(dy) : 0;
+          if (dir && v.lastDir && dir !== v.lastDir && d <= T.range) play('wardenClick', { gain: 0.05 * falloff(d, T.range), pan });   // reversal click
+          if (dir) v.lastDir = dir;
+        }
+        v.lastYaw = on ? facing : null;
+        if (on) k = falloff(d, T.range) * clamp01(speed / T.sweep);
+        g = T.peak * k; setGain(v, g, t0, tau);
+        // treads: CHASE every 0.45 s, RETURN every 0.6 s — unless creatureStep events are driving them
+        if (on && live && (h.state === 'CHASE' || h.state === 'RETURN') && d <= T.stepRange && c.state.time - v.extStepT > 1.5) {
+          v.stepT -= dt;
+          if (v.stepT <= 0) { v.stepT = h.state === 'CHASE' ? T.stepChase : T.stepReturn; play('wardenStep', { gain: 0.25 * falloff(d, T.stepRange), pan }); }
+        } else if (!on) v.stepT = 0;
+        break;
+      }
+      case 'wash': {
+        const T = CTUNE.wash;
+        if (on && v.lastX !== null && dt > 0) { const s = Math.hypot(h.x - v.lastX, h.z - v.lastZ) / dt; v.speed = s < 40 ? s : v.speed; }
+        v.lastX = on ? h.x : null; v.lastZ = on ? h.z : null;
+        const mul = on ? (T.mul[h.state] !== undefined ? T.mul[h.state] : 0) : 0;
+        if (on) k = falloff(d, T.range) * mul * clamp01(0.35 + v.speed / T.speed);
+        g = T.peak * k; setGain(v, g, t0, tau);
+        if (on && live && d <= T.plopRange) {
+          v.plopT -= dt;
+          if (v.plopT <= 0) { v.plopT = rnd(T.plopMin, T.plopMax); play('plop', { gain: 0.14 * falloff(d, T.plopRange), pan }); }
+        }
+        break;
+      }
+      case 'lure': {
+        const T = CTUNE.lure;
+        // presence stays 0 (stats().presence reports it): the lure layer is the only sound it makes
+        const lit = on && h.state === 'LIT' && d <= T.range;
+        const lg = lit ? (T.crackle * TUNE.lampCrackle + T.chime) * falloff(d, T.range) : 0;
+        if (Math.abs(lg - v.lureTarget) > 0.0005 || (lg === 0 && v.lureTarget !== 0)) { v.lureTarget = lg; setTarget(v.g.gain, lg, t0, lg === 0 ? T.tau : tau); }
+        v.target = 0; k = 0;
+        if (on && live && h.state === 'POUNCE' && d <= T.scrabbleRange) {
+          v.scrabT -= dt;
+          if (v.scrabT <= 0) { v.scrabT = 1 / T.scrabbleHz; play('scrabble', { gain: 0.08 * falloff(d, T.scrabbleRange), pan }); }
+        } else v.scrabT = 0;
+        break;
+      }
+      case 'breath': {
+        const T = CTUNE.breath;
+        if (on) k = falloff(d, T.range) * (T.mul[h.state] !== undefined ? T.mul[h.state] : 0.6);
+        g = T.peak * k; setGain(v, g, t0, tau);
+        break;
+      }
+      default: break;
+    }
+    v.k = k;
+    if (v.pan && (k > 0 || (v.lureTarget || 0) > 0)) setTarget(v.pan.pan, pan, t0, tau);
+  }
+}
+
+/* ---------- one-shots ---------- */
+function chitter(t0, { peak = 0.12, pan } = {}) { for (let i = 0; i < 8; i++) note('square', 900 + (i % 2) * 60, 0, t0 + i * 0.044, peak, 0.002, 0.02, { pan }); }
+function bell(t0, f, decay, peak) { note('sine', f, 0, t0, peak, 0.005, decay); note('sine', f * 2.76, 0, t0, peak * 0.35, 0.005, decay * 0.5); }
+Object.assign(SOUNDS, {
+  // Lampwight: DRAWN → a rising sigh; snuff → hard exhale + the lamp crackle cut + a 55 Hz thud
+  lampwightSigh(t0) { burst(t0, 0.2, 0.5, 0.35, { type: 'bandpass', f0: 300, f1: 1200, q: 1.5, sweep: 0.8 }); },
+  lampSnuff(t0) {
+    burst(t0, 0.4, 0.01, 0.14, { type: 'highpass', f0: 1500, q: 0.5 });
+    burst(t0 + 0.02, 0.2, 0.05, 0.3, { type: 'bandpass', f0: 600, f1: 200, q: 1, sweep: 0.3 });
+    note('sine', 55, 0, t0 + 0.05, 0.3, 0.01, 0.45);
+    if (V.lamp) { V.lamp.target = 0; V.lamp.g.gain.cancelScheduledValues(t0); V.lamp.g.gain.setValueAtTime(0, t0); }
+  },
+  // Warden: reversal click, alert clang + horn, treads, "walks home", bell on a kill
+  wardenClick(t0, { gain: g = 0.05, pan } = {}) { burst(t0, g, 0.001, 0.01, { type: 'bandpass', f0: 1800, q: 2, pan }); },
+  wardenAlert(t0) {
+    note('square', 220, 110, t0, 0.3, 0.005, 0.3, { sweep: 0.3 });
+    burst(t0, 0.3, 0.003, 0.08, { type: 'bandpass', f0: 3000, q: 1 });
+    note('sine', 55, 82, t0 + 0.25, 0.3, 0.2, 0.9, { sweep: 1.0 });
+  },
+  wardenStep(t0, { gain: g = 0.25, pan } = {}) { burst(t0, g, 0.004, 0.09, { type: 'lowpass', f0: 200, q: 0.8, pan }); burst(t0 + 0.01, g * 0.4, 0.002, 0.04, { type: 'bandpass', f0: 900, q: 1, pan }); },
+  wardenReturn(t0) { note('sine', 82, 55, t0, 0.15, 0.05, 0.6, { sweep: 0.5 }); },
+  wardenDeath(t0) { SOUNDS.death(t0); bell(t0 + 0.1, 165, 1.5, 0.3); },
+  // Drowner: plops, surge splash + gurgling roar, reverse splash on the sink, "pulled under" on a kill
+  plop(t0, { gain: g = 0.14, pan } = {}) { note('sine', 180, 90, t0, g, 0.005, 0.12, { sweep: 0.12, pan }); },
+  drownerSurge(t0) {
+    burst(t0, 0.5, 0.03, 0.6, { type: 'bandpass', f0: 400, f1: 2000, q: 0.8, sweep: 0.6 });
+    note('sawtooth', 48, 36, t0 + 0.1, 0.35, 0.1, 1.1, { sweep: 1.2 });
+    burst(t0 + 0.1, 0.12, 0.2, 1.0, { type: 'lowpass', f0: 250, q: 1.5 });
+  },
+  drownerSink(t0) { burst(t0, 0.35, 0.3, 0.1, { type: 'bandpass', f0: 2000, f1: 400, q: 0.8, sweep: 0.4 }); note('sine', 120, 60, t0, 0.12, 0.2, 0.2, { sweep: 0.4 }); },
+  drownerDeath(t0) {
+    const lp = filt('lowpass', 2000, 1); lp.frequency.setValueAtTime(2000, t0); lp.frequency.exponentialRampToValueAtTime(80, t0 + 1.2);
+    const g = gain(1); lp.connect(g); g.connect(state.master);
+    burst(t0, 0.5, 0.02, 0.5, { type: 'bandpass', f0: 500, f1: 2500, q: 0.8, sweep: 0.4, dest: lp });
+    burst(t0 + 0.05, 0.6, 0.005, 0.1, { type: 'lowpass', f0: 6000, q: 0.5, dest: lp });
+    note('square', 60, 0, t0 + 0.05, 0.5, 0.01, 1.2, { dest: lp });
+    setTimeout(() => { try { lp.disconnect(); g.disconnect(); } catch (e) { /* ignore */ } }, 1600);
+  },
+  // False light: snap-click as the glass dies then a chitter; scrabbling; the reveal shriek; a kill
+  falseLightPounce(t0) { burst(t0, 0.3, 0.001, 0.012, { type: 'bandpass', f0: 2500, q: 1.5 }); chitter(t0 + 0.05); },
+  scrabble(t0, { gain: g = 0.08, pan } = {}) { burst(t0, g, 0.002, 0.012, { type: 'lowpass', f0: 1200, q: 0.7, pan }); },
+  falseLightReveal(t0) { note('sawtooth', 1200, 2400, t0, 0.35, 0.02, 0.38, { sweep: 0.4 }); burst(t0, 0.12, 0.02, 0.3, { type: 'highpass', f0: 2500, q: 0.7 }); },
+  falseLightDeath(t0) { SOUNDS.death(t0); chitter(t0 + 0.15, { peak: 0.16 }); },
+  // Brute: roar on CHASE, stride thuds, the lantern crunch, a snort at the flash, a heavier kill
+  bruteRoar(t0) {
+    note('sawtooth', 70, 45, t0, 0.4, 0.05, 0.95, { sweep: 1.0 });
+    burst(t0, 0.45, 0.35, 0.65, { type: 'lowpass', f0: 300, f1: 1800, q: 1, sweep: 0.6 });
+  },
+  bruteStep(t0, { gain: g = 0.35, pan } = {}) { burst(t0, g, 0.003, 0.16, { type: 'lowpass', f0: 90, q: 1, pan }); if (g > 0.15) burst(t0 + 0.01, g * 0.25, 0.002, 0.05, { type: 'bandpass', f0: 500, q: 0.8, pan }); },
+  lanternCrunch(t0) {
+    burst(t0, 0.5, 0.005, 0.15, { type: 'lowpass', f0: 600, q: 0.8 });
+    for (let i = 0; i < 3; i++) note('square', 180, 0, t0 + 0.02 + i * 0.06, 0.2, 0.002, 0.03);
+    burst(t0 + 0.05, 0.15, 0.01, 0.35, { type: 'highpass', f0: 3000, q: 0.5 });   // glass
+  },
+  snort(t0) { burst(t0, 0.3, 0.01, 0.2, { type: 'bandpass', f0: 250, q: 1.2 }); },
+  bruteDeath(t0) {
+    const lp = filt('lowpass', 4000, 1); lp.frequency.setValueAtTime(4000, t0); lp.frequency.exponentialRampToValueAtTime(100, t0 + 1.2);
+    const g = gain(1.3); lp.connect(g); g.connect(state.master);
+    burst(t0, 0.6, 0.005, 0.1, { type: 'lowpass', f0: 6000, q: 0.5, dest: lp });
+    note('square', 60, 0, t0, 0.5, 0.01, 1.2, { dest: lp });
+    note('square', 40, 0, t0 + 0.05, 0.4, 0.01, 0.35);
+    setTimeout(() => { try { lp.disconnect(); g.disconnect(); } catch (e) { /* ignore */ } }, 1600);
+  },
+});
+const DEATH_BY = { warden: 'wardenDeath', drowner: 'drownerDeath', falseLight: 'falseLightDeath', brute: 'bruteDeath' };
+
+/* ---------- event wiring (wraps audio.init; the base table above stays untouched) ---------- */
+{
+  const baseInit = audio.init;
+  audio.init = function (c) {
+    baseInit(c);
+    const on = (name, fn) => c.events.on(name, fn);
+    on('hunterState', ({ id, state: s, prev } = {}) => {
+      const profile = profileOf(id);
+      if (profile === 'lampwight' && s === 'DRAWN' && prev !== 'DRAWN') play('lampwightSigh');
+      if (profile === 'brute' && s === 'CHASE' && prev !== 'CHASE') {
+        const t = c.state.time;
+        if (t - state.lastSting >= AUDIO.stingGap) { state.lastSting = t; play('bruteRoar'); }
+      }
+    });
+    on('lampSnuffed', () => play('lampSnuff'));
+    on('lanternSmashed', () => play('lanternCrunch'));
+    on('wardenAlert', () => play('wardenAlert'));
+    on('wardenReturn', () => play('wardenReturn'));
+    on('drownerSurge', () => play('drownerSurge'));
+    on('drownerSink', () => play('drownerSink'));
+    on('falseLightPounce', () => play('falseLightPounce'));
+    on('falseLightReveal', () => play('falseLightReveal'));
+    on('flashResisted', () => play('snort'));
+    on('creatureStep', ({ hunterId, profile, x, z, d } = {}) => {
+      const prof = profile || profileOf(hunterId);
+      const dist = Number.isFinite(d) ? d : (Number.isFinite(x) && Number.isFinite(z) ? distTo(x, z) : 0);
+      const pan = Number.isFinite(x) && Number.isFinite(z) ? panAt(x, z) : 0;
+      if (prof === 'brute') { const T = CTUNE.breath; if (dist <= T.stepRange) play('bruteStep', { gain: T.stepGain * falloff(dist, T.stepRange), pan }); }
+      else if (prof === 'warden') {
+        const T = CTUNE.grind, v = hunterId != null ? V.presence[hunterId] : null;
+        if (v && v.kind === 'grind') v.extStepT = c.state.time;
+        if (dist <= T.stepRange) play('wardenStep', { gain: 0.25 * falloff(dist, T.stepRange), pan });
+      } else if (dist <= 18) play('step', { sprint: false, water: false });
+    });
+    on('death', ({ hunterId } = {}) => { const s = DEATH_BY[profileOf(hunterId)]; if (s) play(s); });
   };
 }

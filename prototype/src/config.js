@@ -6,9 +6,9 @@ export const SAVE_KEY = 'undercroft-v2';         // v2 save key (DESIGN-v2 §8)
 export const SAVE_KEY_V1 = 'undercroft-proto';   // v1 key: imported once, and still mirrored for compatibility
 
 export const CFG = {
-  walk: 3.5, sprint: 6.0, radius: 0.3, eye: 1.6, fov: 75, fovSprint: 82, lookKeys: 1.9, mouseSens: 0.002,
+  walk: 2.6, sprint: 4.2, radius: 0.3, eye: 1.6, fov: 75, fovSprint: 80, lookKeys: 1.9, mouseSens: 0.002,
   oilMax: 100, startOil: [50, 60, 70, 80], burn: 0.5, deepBurnMul: 1.5, lowOil: 20,
-  lampColor: 0xffb265, lampInt: 9.0, lampDist: 16, deepLampMul: 0.6,
+  lampColor: 0xffb265, lampInt: 6.0, lampDist: 11, deepLampMul: 0.6,
   flashCost: 15, flashCd: 1.5, flashDur: 0.15, flashMul: 8, flashRange: 7, flashDot: 0.4, flashFx: 0.1,
   lanternCost: 20, lanternCd: 1.0, lanternMax: 4, poolR: 2.5, flaskOil: 25,
   interactR: 1.6, fadeT: 0.3, toastT: 2.5, dyingT: 1.2,
@@ -18,7 +18,7 @@ export const CFG = {
   bandBurn: (lap) => 1.1 + 0.12 * lap, bandLamp: (lap) => 0.95 - 0.08 * lap,
 };
 
-// Shared hunter senses/timers (DESIGN.md §6) — identical for every profile.
+// Shared hunter senses/timers (DESIGN.md §5) — identical for every profile.
 export const HUNTER = {
   tick: 0.2, repath: 0.3, lampR: 12, sprintR: 9, walkR: 2.5, stillR: 1.0, waterR: 7,
   staggerT: 3, dazeT: 4, unreachT: 6, waitT: 2, wanderCells: 10, farCells: 12,
@@ -27,15 +27,62 @@ export const HUNTER = {
 // Per-profile speeds/eyes (DESIGN-v2 §2: `base` = v1, `fast` = Ossuary/Source).
 export const HUNTER_PROFILES = {
   base: {
-    speed: { WANDER: 1.8, INVESTIGATE: 3.0, CHASE: 4.3, STAGGERED: 0 },
+    speed: { WANDER: 1.5, INVESTIGATE: 2.6, CHASE: 3.6, STAGGERED: 0 },
     eye: { WANDER: 0.4, INVESTIGATE: 0.8, CHASE: 1.5, STAGGERED: 0.05 },
     catchR: 0.8, loseT: 3, scaleY: 1.0, eyeColor: 0xff3a20,
   },
   fast: {
-    speed: { WANDER: 2.2, INVESTIGATE: 3.6, CHASE: 5.0, STAGGERED: 0 },
+    speed: { WANDER: 1.8, INVESTIGATE: 3.0, CHASE: 4.4, STAGGERED: 0 },
     eye: { WANDER: 0.4, INVESTIGATE: 0.8, CHASE: 1.5, STAGGERED: 0.05 },
     catchR: 0.9, loseT: 4, scaleY: 1.15, eyeColor: 0xffa020,
   },
+  // DESIGN.md §5.6 — the five creatures. `kills: false` = it never emits hunterCatch (the Lampwight snuffs).
+  // `senses` are the ranges hunter.js's generic sense() reads (0 = that stimulus is ignored); the cone / near /
+  // proximity / water-trigger predicates are the creature's own and read the CREATURE block below.
+  lampwight: {
+    speed: { DRIFT: 1.2, DRAWN: 2.2, SNUFF: 0, SATED: 1.6, STAGGERED: 0 },
+    eye: { DRIFT: 0.3, DRAWN: 1.2, SNUFF: 2.5, SATED: 0.6, STAGGERED: 0.05 },
+    catchR: 0.9, loseT: 2, scaleY: 1.0, eyeColor: 0x9ad0ff, kills: false,
+    senses: { lamp: 24, sprint: 0, walk: 0, still: 0, water: 0, follower: false },
+  },
+  warden: {
+    speed: { SENTRY: 0, ALERT: 0, CHASE: 3.4, RETURN: 2.0, FLINCH: 0 },
+    eye: { SENTRY: 0.6, ALERT: 1.5, CHASE: 1.0, RETURN: 0.6, FLINCH: 0 },
+    catchR: 0.8, loseT: 6, scaleY: 1.0, eyeColor: 0x7fd0ff, kills: true,
+    senses: { lamp: 9, sprint: 4, walk: 0, still: 0, water: 0, follower: false },
+  },
+  drowner: {
+    speed: { SUBMERGED: 0.6, SURFACING: 0, SURGE: 5.0, LURK: 1.5, SINK: 0 },
+    eye: { SUBMERGED: 0, SURFACING: 0.8, SURGE: 1.6, LURK: 1.0, SINK: 0.3 },
+    catchR: 0.9, loseT: 4, scaleY: 1.0, eyeColor: 0x40ff9a, kills: true,
+    senses: { lamp: 10, sprint: 8, walk: 0, still: 0, water: 8, follower: false },
+  },
+  falseLight: {
+    speed: { LIT: 0, DARK: 0, POUNCE: 6.0, RETREAT: 3.0, RELIGHT: 0, REVEALED: 0, STAGGERED: 0 },
+    eye: { LIT: 0, DARK: 1.0, POUNCE: 1.2, RETREAT: 0.2, RELIGHT: 0.1, REVEALED: 3.0, STAGGERED: 0.6 },
+    catchR: 0.9, loseT: 0, scaleY: 1.0, eyeColor: 0xff2020, kills: true,
+    senses: { lamp: 0, sprint: 0, walk: 0, still: 0, water: 0, follower: false, proximity: 3.0 },
+  },
+  brute: {
+    speed: { WANDER: 1.3, INVESTIGATE: 2.0, CHASE: 2.6 },
+    eye: { WANDER: 0.3, INVESTIGATE: 0.6, CHASE: 1.0 },
+    catchR: 1.0, loseT: 4, scaleY: 1.0, eyeColor: 0xff6a20, kills: true,
+    // walk 1.5 (was 2.0, the balance pass): at 2.0 a doused player walking away stayed exactly on its sense edge and
+    // could never break contact — its chase speed *is* the walk speed. 1.5 makes "douse and walk" honest at 2 u.
+    senses: { lamp: 8, sprint: 6, walk: 1.5, still: 1.0, water: 5, follower: true },
+  },
+};
+// DESIGN.md §5.6 — creature-specific timers and geometry (hunter.js reads these; models/audio have their own).
+export const CREATURE = {
+  lampwight: { snuffT: 0.8, snuffAt: 0.3, satedT: 5, satedCells: 8, staggerT: 3, dazeT: 4, oil: 12, lockout: 2 },
+  warden:    { sweep: 75, sweepRate: 0.35, reach: 9, cone: 35, near: 1.2, territory: 8, alertT: 0.6, flinchT: 0.5, giveUpT: 6, atPost: 0.3,
+               light: { color: 0x7fd0ff, dist: 9, angle: 35, penumbra: 0.5, decay: 2, int: { SENTRY: 1.2, ALERT: 3.0, CHASE: 2.0, RETURN: 1.2, FLINCH: 0 } } },
+  drowner:   { trigger: 6, home: 12, homeSpeed: 1.0, driftCells: 8, driftT: [3, 6], surfaceT: 0.4, sinkT: 0.6, lurkT: 4, dazeT: 4,
+               ySub: -0.7, ySurf: -0.15, ripple: { color: 0x2a5a6a, k: 0.4, period: 1.2, min: 0.6, max: 1.4 } },
+  falseLight: { proximity: 3.0, darkT: 0.35, pounceT: 1.5, relightT: 10, revealT: 1.0, staggerT: 1.0, restMin: 8, restMax: 30, restTop: 6,
+                maxLights: 3, light: { color: 0xffc070, int: 2.0, dist: 6, decay: 2, y: 1.28 } },
+  brute:     { leash: 14, step: { WANDER: 0.6, INVESTIGATE: 0.5, CHASE: 0.45 }, smashR: 1.0, poolMul: 0.5, turnRate: 2.0, shakeR: 8, shakeAmp: 0.012,
+               embers: { n: 24, rise: 0.8, life: 0.8, color: 0xffa040 }, unreachT: 6 },
 };
 
 export const TIERS = [

@@ -2,7 +2,7 @@
 // (movement/lamp/flash/lantern/topUp/interact — v1 code moved here). DESIGN-v2 §9.
 // Frame order: input → player → world → hunter → npc → contracts → hub → endgame → audio → ui → render.
 import * as THREE from 'three';
-import { CFG, KEYS, POINTS, TOOLS, TIERS, HUB_OX } from './config.js';
+import { CFG, KEYS, POINTS, TOOLS, TIERS, HUB_OX, CREATURE } from './config.js';
 import * as MAPS from './maps.js';
 import * as models from './models.js';
 import * as world from './world.js';
@@ -54,7 +54,7 @@ const ctx = {
     prevMode: null, dyingT: 0, lostLoot: 'nothing', lostAny: false },
   player: { x: 0, z: 0, yaw: 0, pitch: 0, oil: 50, lampOn: true, sprinting: false, moving: false,
     onDeep: false, inWater: false, inPool: false, lap: 0, carried: { oil: 0, relic: 0, rich: 0, quest: 0 },
-    flashCd: 0, lanternCd: 0, flashT: 0, map: null, follower: null },
+    flashCd: 0, lanternCd: 0, flashT: 0, lampLock: 0, map: null, follower: null },   // lampLock: Lampwight relight lockout (s)
   hub: { map: null, group: null, flame: null, buildings: null },
   zone: { id: null, meta: null, map: null, group: null, spots: [], gates: [], npcCell: null },
   lanterns: [], items: [], hunters: [], npcs: [],
@@ -142,6 +142,7 @@ function updateLamp(dt, time) {
   player.flashCd = Math.max(0, player.flashCd - dt);
   player.lanternCd = Math.max(0, player.lanternCd - dt);
   player.flashT = Math.max(0, player.flashT - dt);
+  player.lampLock = Math.max(0, (player.lampLock || 0) - dt);
   const amp = player.oil < 15 ? 0.07 * 3 : 0.07;
   const flick = 0.93 + amp * Math.sin(time * 13);
   let inten = player.lampOn ? CFG.lampInt * flick : 0;
@@ -153,6 +154,7 @@ function updateLamp(dt, time) {
 function toggleLamp() {
   if (state.mode !== 'ZONE') return false;
   if (!player.lampOn && player.oil <= 0) { ui.toast('The lamp is dry.'); return false; }
+  if (!player.lampOn && player.lampLock > 0) { ui.toast('The wick is cold'); events.emit('uiError', {}); return false; }   // DESIGN.md §5.1: snuffed
   player.lampOn = !player.lampOn;
   events.emit('lampToggle', { on: player.lampOn });
   return true;
@@ -174,11 +176,12 @@ function flash() {
   player.oil -= cost; player.flashCd = CFG.flashCd; player.flashT = CFG.flashDur;
   const m = ctx.zone.map;
   for (const h of ctx.hunters) {
-    if (!h.active || h.state === 'STAGGERED') continue;
+    if (!h.active) continue;
     const dx = h.x - player.x, dz = h.z - player.z, d = Math.hypot(dx, dz);
     if (d > 0 && d <= CFG.flashRange) {
       const dot = (dx * -Math.sin(player.yaw) + dz * -Math.cos(player.yaw)) / d;
-      if (dot > CFG.flashDot && MAPS.los(m, h.x, h.z, player.x, player.z)) hunterMod.stagger(h);
+      // the cone/LOS test is main's; what the flash does (stagger / flinch / sink / reveal / nothing) is the profile's
+      if (dot > CFG.flashDot && MAPS.los(m, h.x, h.z, player.x, player.z)) hunterMod.onFlash(h);
     }
   }
   events.emit('flash', { x: player.x, z: player.z });
@@ -579,6 +582,22 @@ function resize() {
 }
 window.addEventListener('resize', resize);
 
+/* ============================================================
+   Screen fx: ctx.fx.shake(amount) — a pitch jitter `amount·sin(28t)` decaying over 0.25 s plus a 0.01 u eye dip
+   (DESIGN.md §5.5: Brute strides within 8 u). Applied after every module has run, just before the render.
+   ============================================================ */
+const fx = { amp: 0, t: 0, dur: 0.25, pitch: 0, shake(amount) { if (!(amount > 0)) return; fx.amp = Math.max(fx.amp, amount); fx.t = fx.dur; } };
+ctx.fx = fx;
+function applyFx(dt) {
+  fx.pitch = 0;
+  if (fx.t <= 0) { fx.amp = 0; return; }
+  fx.t = Math.max(0, fx.t - dt);
+  const k = fx.t / fx.dur;
+  fx.pitch = fx.amp * k * Math.sin(28 * state.time);
+  camera.rotation.x += fx.pitch;
+  camera.position.y -= 0.01 * k;
+}
+
 function update(dt) {
   const time = state.time, mode = state.mode;
   const playing = mode === 'HUB' || mode === 'ZONE';
@@ -606,6 +625,7 @@ function update(dt) {
   endgame.update(ctx, dt);
   audio.update(ctx, dt);
   ui.update(ctx, dt);
+  applyFx(dt);
 }
 const clock = new THREE.Clock();
 function frame() {
@@ -689,6 +709,10 @@ Object.assign(ctx.actions, {
   // teleport(x, z, yaw?): move the player within the current map (tests)
   teleport(x, z, yaw) { player.x = x; player.z = z; if (Number.isFinite(yaw)) player.yaw = yaw; return { x: player.x, z: player.z }; },
   spawnHunter: (cx, cz, profile) => hunterMod.spawnHunter(cx, cz, profile),
+  // spawnCreature(profile, cx, cz, opts): any creature profile at a cell (DESIGN.md §5.8 debug API)
+  spawnCreature: (profile, cx, cz, opts) => hunterMod.spawnCreature(profile, cx, cz, opts),
+  creature: (profile, cx, cz, opts) => hunterMod.spawnCreature(profile, cx, cz, opts),
+  shake: (amount) => fx.shake(amount),
   rideUp: () => endgame.rideUp(),
   openChoice: () => endgame.openChoice(),
   continueEnding: () => endgame.continueToHub(),
@@ -701,6 +725,15 @@ Object.assign(ctx.actions, {
 saveMod.load();
 saveMod.init(ctx);
 events.on('hunterCatch', ({ hunterId, target }) => { if (target === 'player') die(ctx.hunters[hunterId]); });
+// DESIGN.md §5.1: the Lampwight's touch puts the lamp out, burns oil and locks the wick for `lockout` seconds
+events.on('lampSnuffed', ({ oil, lockout }) => {
+  if (state.mode !== 'ZONE') return;
+  player.lampOn = false;
+  player.oil = Math.max(0, player.oil - (oil || CREATURE.lampwight.oil));
+  player.lampLock = Math.max(player.lampLock || 0, lockout || CREATURE.lampwight.lockout);
+});
+// DESIGN.md §5.5: a Brute stride within shakeR shakes the camera
+events.on('creatureStep', ({ d }) => { const R = CREATURE.brute.shakeR; if (state.mode === 'ZONE' && d <= R) fx.shake(CREATURE.brute.shakeAmp * (1 - d / R)); });
 ui.init(ctx);
 world.init(ctx);                                   // fog/ambient, hub blocks + sconces, flameTier listener
 hunterMod.init(ctx);
@@ -739,7 +772,9 @@ window.__game = {
   get npc() { return ctx.npc; },
   get contracts() { return ctx.contracts; },
   get endgame() { return ctx.endgame; },
-  get hunterApi() { return { spawnAll: () => hunterMod.spawnAll(ctx.zone), clear: hunterMod.clear, stagger: hunterMod.stagger, investigate: hunterMod.investigate, recomputePools: hunterMod.recomputePools }; },
+  get hunterApi() { return { spawnAll: () => hunterMod.spawnAll(ctx.zone), clear: hunterMod.clear, stagger: hunterMod.stagger, investigate: hunterMod.investigate, recomputePools: hunterMod.recomputePools,
+    onFlash: hunterMod.onFlash, hint: hunterMod.hint, info: hunterMod.info, spawnCreature: hunterMod.spawnCreature, profiles: hunterMod.PROFILES, pickWander: hunterMod.pickWander }; },
+  get fx() { return fx; },
   models, mapsApi: MAPS,
   HUB_OX,
 };

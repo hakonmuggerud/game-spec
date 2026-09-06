@@ -26,14 +26,16 @@ html, body { margin: 0; height: 100%; background: #101014; overflow: hidden;
 <body>
 <canvas id="c"></canvas>
 <div id="labels"></div>
-<div id="bar">Model showcase — <span id="count"></span> models · ?only=name · ?static=1 · ?lamp=1 (in-game lamp light only) · ?spin=0<br>
+<div id="bar">Model showcase — <span id="count"></span> models · ?only=name[,name…] · ?static=1 · ?lamp=1 (in-game lamp light only) · ?spin=0<br>
   <span id="warn"></span></div>
 <script type="module">
 import * as THREE from 'three';
 import * as models from './src/models.js';
 
 const q = new URLSearchParams(location.search);
-const only = q.get('only');
+const only = q.get('only');                 // ?only=name (close-up) or ?only=a,b,c (a small grid of just those)
+const onlyList = only ? only.split(',').map(s => s.trim()).filter(Boolean) : null;
+const solo = !!(onlyList && onlyList.length === 1);
 const isStatic = q.get('static') === '1';
 const spin = q.get('spin') !== '0' && !isStatic;
 const lampOnly = q.get('lamp') === '1';
@@ -43,22 +45,24 @@ const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(1);
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(lampOnly ? 0x000000 : 0x101014);
-const camera = new THREE.PerspectiveCamera(only ? 45 : 52, 1, 0.05, 100);
+const camera = new THREE.PerspectiveCamera(solo ? 45 : 52, 1, 0.05, 100);
 
 // lighting: a soft fill so shapes read, plus a warm "handlamp" point light like the game's.
 if (!lampOnly) {
   scene.add(new THREE.AmbientLight(0x404050, 1.2));
   const hemi = new THREE.HemisphereLight(0x60607a, 0x201810, 0.8); scene.add(hemi);
   const dir = new THREE.DirectionalLight(0xfff0e0, 1.2); dir.position.set(-3, 6, 4); scene.add(dir);
+  const fill = new THREE.DirectionalLight(0xa8bcd8, 0.55); fill.position.set(5, 3, 9); scene.add(fill);   // camera-side fill: near-black hides still read
 }
 
 // order of the grid (row-major)
-const ORDER = only ? [only] : [
+const ORDER = onlyList || [
   'hunter', 'hunter:fast', 'lamplighter', 'cartographer', 'keeper', 'deacon', 'lantern', 'bundle',
   'flask', 'relic', 'richRelic', 'quest', 'stairs', 'elevator', 'gate', 'altar',
   'water', 'flameBase', 'tram', 'workshop', 'oilPress', 'cartTable', 'shrine', 'board',
+  'lampwight', 'warden', 'drowner', 'falseLight', 'falseLight:dark', 'brute', 'lanternDebris', 'emberBurst',
 ];
-const cols = only ? 1 : 8, spacing = 3.4;
+const cols = solo ? 1 : Math.min(8, onlyList ? Math.ceil(Math.sqrt(onlyList.length)) : 8), spacing = 3.4;
 const entries = [];
 const warn = [];
 ORDER.forEach((key, i) => {
@@ -66,18 +70,25 @@ ORDER.forEach((key, i) => {
   let g;
   try { g = name === 'hunter' ? models.hunter({ profile: variant || 'base' }) : models.makeModel(name, { n: 3, locked: [false, true, true, false] }); }
   catch (e) { warn.push(`${key}: ${e.message}`); return; }
+  // creature poses for the showcase: the drowner surfaced on its "water", the false light's DARK tell, a brute mid-stride
+  if (name === 'drowner') { g.userData.body.position.y = -0.15; g.userData.jaw.rotation.x = 0.35; }
+  if (name === 'falseLight' && variant === 'dark') g.userData.setDark(true);
+  if (name === 'brute') { g.userData.legs[0].rotation.x = 0.35; g.userData.legs[1].rotation.x = -0.35; g.userData.feet[1].position.y += 0.08; g.userData.body.position.x = 0.06; }
+  if (name === 'warden') { g.userData.head.rotation.y = 0.5; g.userData.visor.material.emissiveIntensity = 1.0; }
+  if (name === 'lampwight') g.userData.ember.material.emissiveIntensity = 1.0;
+  if (g.userData.step && isStatic) for (let i = 0; i < 15; i++) g.userData.step(1 / 60);   // bursts frozen mid-flight
   const cx = i % cols, cz = Math.floor(i / cols);
   const x = (cx - (cols - 1) / 2) * spacing, z = (cz - (Math.ceil(ORDER.length / cols) - 1) / 2) * spacing;
   const pedestal = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.08, 3.2), new THREE.MeshLambertMaterial({ color: 0x1c1c22 }));
   pedestal.position.set(x, -0.04 - 0.22 * (name === 'water'), z); scene.add(pedestal);
   g.position.set(x, 0, z);
   scene.add(g);
-  const light = new THREE.PointLight(0xffb265, lampOnly ? 9 : 2.5, lampOnly ? 16 : 6, 2);
-  light.position.set(x + 0.8, 1.6, z + 1.8); scene.add(light);
+  const light = new THREE.PointLight(0xffb265, lampOnly ? 9 : 3.2, lampOnly ? 16 : 9, 2);
+  light.position.set(x + 0.8, 1.2 + 0.6 * (g.userData.height || 1), z + 1.8); scene.add(light);   // rides the model's height
   const boxes = g.userData.boxes;
   if (boxes > 30) warn.push(`${key}: ${boxes} boxes (> 30)`);
   // hunter eyes: show the CHASE intensity so they read
-  if (g.userData.eyes) g.userData.eyes.forEach(e => { e.material.emissiveIntensity = 1.5; });
+  if (g.userData.eyes && !(name === 'falseLight' && variant !== 'dark') && name !== 'warden') g.userData.eyes.forEach(e => { e.material.emissiveIntensity = 1.5; });
   entries.push({ key, name, g, x, z, boxes, height: g.userData.height });
 });
 document.getElementById('count').textContent = entries.length;
@@ -90,8 +101,9 @@ for (const e of entries) {
   d.innerHTML = `${e.key}<br><small>${e.boxes} boxes · ${e.height} u</small>`; labels.appendChild(d); e.lbl = d;
 }
 const rows = Math.ceil(ORDER.length / cols);
-const target = new THREE.Vector3(0, 0.6, only ? 0 : 0.3);
-const dist = only ? 5.5 : cols * spacing * 0.86;
+const soloH = solo && entries.length ? Math.max(1.2, entries[0].height) : 1.2;   // frame a single model by its height
+const target = new THREE.Vector3(0, solo ? soloH * 0.45 : 0.6, solo ? 0 : (rows - 3) * 0.5 + 0.3);
+const dist = solo ? 3.2 + 1.5 * soloH : Math.max(cols * spacing * 0.86, rows * spacing * 1.55);
 function resize() {
   const w = innerWidth, h = innerHeight;
   renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
@@ -102,13 +114,14 @@ let t = 0, last = performance.now();
 const v = new THREE.Vector3();
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now; if (!isStatic) t += dt;
-  const ang = only ? 0.6 : 0.0;
-  camera.position.set(target.x + Math.sin(ang) * dist * 0.35, only ? 2.4 : dist * 0.72, target.z + dist * (only ? 0.9 : 0.55));
+  const ang = solo ? 0.6 : 0.0;
+  camera.position.set(target.x + Math.sin(ang) * dist * 0.35, solo ? soloH * 0.45 + 1.4 : dist * 0.72, target.z + dist * (solo ? 0.9 : 0.55));
   camera.lookAt(target);
   for (const e of entries) {
     if (spin && e.name !== 'water' && e.name !== 'tram' && e.name !== 'stairs') e.g.rotation.y = Math.PI + 0.35 + t * 0.4;
-    else if (!spin) e.g.rotation.y = Math.PI + (only ? 0.55 : 0.35);
+    else if (!spin) e.g.rotation.y = Math.PI + (solo ? 0.55 : 0.35);
     if (e.g.userData.update) e.g.userData.update(t);
+    if (e.g.userData.step && !isStatic && !e.g.userData.step(dt)) e.g.userData.reset();   // bursts replay in a loop
     v.set(e.x, -0.1, e.z + 1.6).project(camera);
     e.lbl.style.left = ((v.x + 1) / 2 * innerWidth) + 'px';
     e.lbl.style.top = ((1 - v.y) / 2 * innerHeight) + 'px';

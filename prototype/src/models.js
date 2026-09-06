@@ -636,10 +636,280 @@ export function mergeBoxes(boxes, { jitter = 0.05 } = {}) {
 }
 
 /* ============================================================
+   Creature roster (DESIGN.md §5.1–5) — one factory per profile, feet origin, front toward −Z.
+   Every group's userData carries `model` (= the profile name), `boxes`, `height`, `eyes[]` (per-mesh emissive
+   materials: set eyes[i].material.emissiveIntensity per state, exactly like the hunter) and the live handles the
+   AI animates, listed per factory. `update(t)` (absolute seconds) drives the idle motion that needs no game state
+   (bob / ripple pulse / lure flicker); everything state-driven is a handle the caller sets.
+   ============================================================ */
+const TAU = Math.PI * 2;
+const pivot = (x, y, z) => { const p = new THREE.Group(); p.position.set(x, y, z); return p; };
+let rippleGeo = null;
+function ripple() {
+  if (!rippleGeo) { rippleGeo = new THREE.RingGeometry(0.86, 1.0, 32); rippleGeo.rotateX(-Math.PI / 2); }
+  const m = new THREE.Mesh(rippleGeo, new THREE.MeshLambertMaterial({ color: 0x000000, emissive: 0x2a5a6a, emissiveIntensity: 0.4,
+    side: THREE.DoubleSide, transparent: true, opacity: 0.9 }));
+  m.material._shared = false;
+  return m;
+}
+
+// lampwight() — the light-drinker: a hooded, legless shroud 2.2 tall that drifts 0.15 u off the floor; 12 boxes.
+// Pale blue-grey (0x6a7488) against the hunter's near-black. userData: eyes[2] (0x9ad0ff), ember (chest mesh,
+// 0xffb265: emissiveIntensity 0 → 1.5 at SNUFF, decaying through SATED — the stolen light; unlit it reads as a recess
+// in the shroud, never a black hole), body (sub-group the bob
+// moves), hands[2], update(t) → 0.05 u bob at 0.7 Hz.
+export function lampwight(opts = {}) {
+  const shroud = 0x6a7488, hood = 0x0a0a10, rag = 0x46505f, eyeK = opts.eyeIntensity != null ? opts.eyeIntensity : 0.3;
+  const g = new THREE.Group();
+  const body = new THREE.Group(); body.position.y = 0.15;
+  const parts = build([
+    box(0, 0.0, 0.02, 0.34, 0.36, 0.26, rag, 'skirtLow'),                 // tattered hem, floating
+    box(0, 0.34, 0, 0.5, 0.36, 0.32, shroud, 'skirtHigh'),
+    box(0, 0.68, 0, 0.36, 1.0, 0.28, shroud, 'torso'),
+    box(0, 1.5, 0.02, 0.28, 0.3, 0.28, hood, 'head'),                      // the face is the hood's shadow
+    box(0, 1.7, 0.03, 0.42, 0.35, 0.4, shroud, 'hood'),
+    box(-0.29, 0.3, -0.04, 0.1, 1.2, 0.1, shroud, 'armL'), box(0.29, 0.3, -0.04, 0.1, 1.2, 0.1, shroud, 'armR'),
+    box(-0.29, 0.16, -0.05, 0.13, 0.15, 0.13, hood, 'handL'), box(0.29, 0.16, -0.05, 0.13, 0.15, 0.13, hood, 'handR'),
+    glow(-0.07, 1.62, -0.13, 0.06, 0.06, 0.06, 0x9ad0ff, eyeK, 'eyeL'),
+    glow(0.07, 1.62, -0.13, 0.06, 0.06, 0.06, 0x9ad0ff, eyeK, 'eyeR'),
+    emissive(box(0, 1.2, -0.13, 0.14, 0.14, 0.08, 0x3a4250, 'ember'), 0xffb265, 0),   // unlit it is a recess in the shroud, not a black hole
+  ], { jitter: 0 });
+  body.add(parts); g.add(body);
+  const update = (t) => { body.position.y = 0.15 + 0.05 * Math.sin(t * TAU * 0.7); };
+  return finish(g, 'lampwight', { eyes: [named(parts, 'eyeL'), named(parts, 'eyeR')], ember: named(parts, 'ember'),
+    hands: [named(parts, 'handL'), named(parts, 'handR')], body, update });
+}
+
+// warden() — the sentinel: an upright bronze-and-verdigris statue 2.5 tall on a plinth, halberd in hand; 16 boxes.
+// userData: head (sub-group pivoted at the neck, y 2.05 — yaw it for the sweep when the body stays put), conePivot
+// (an empty Object3D on the head at the visor, facing −Z: attach the SpotLight and its target here), visor (the
+// emissive slit, 0x7fd0ff: k = spotlight ÷ 2), eyes = [visor], legs[2] (hip pivots: rotation.x ±0.3 in CHASE),
+// plinth (hide it when it leaves the post), halberd, spotY 2.28.
+export function warden(opts = {}) {
+  const bronze = 0x3a2f22, verdigris = 0x2f5a4a, tabard = 0x1c1614, stone = 0x2a2620, dark = 0x241d15, helm = 0x4a3c28;
+  const visorK = opts.visorIntensity != null ? opts.visorIntensity : 0.6;
+  const g = new THREE.Group();
+  g.add(build([box(0, 0, 0, 0.9, 0.15, 0.9, stone, 'plinth')], { jitter: 0 }));
+  const plinth = named(g, 'plinth');
+  const legs = [];
+  for (const s of [-1, 1]) {
+    const p = pivot(s * 0.18, 0.95, 0);
+    p.add(build([box(0, -0.8, 0, 0.22, 0.8, 0.26, dark, 'leg')], { jitter: 0 }));
+    g.add(p); legs.push(p);
+  }
+  const torso = build([
+    box(0, 0.95, 0, 0.5, 0.22, 0.32, dark, 'pelvis'),
+    box(0, 1.15, 0, 0.7, 0.9, 0.4, bronze, 'torso'),
+    box(0, 1.0, -0.21, 0.4, 0.95, 0.04, tabard, 'tabard'),
+    box(-0.48, 1.85, 0, 0.3, 0.3, 0.34, verdigris, 'pauldronL'), box(0.48, 1.85, 0, 0.3, 0.3, 0.34, verdigris, 'pauldronR'),
+    box(-0.48, 1.1, 0, 0.2, 0.78, 0.2, dark, 'armL'), box(0.48, 1.1, 0, 0.2, 0.78, 0.2, dark, 'armR'),
+    box(0.58, 0.3, -0.2, 0.06, 2.2, 0.06, 0x2a2018, 'halberd'),
+    box(0.58, 2.0, -0.2, 0.3, 0.5, 0.05, 0x6a6a60, 'blade'),
+  ], { jitter: 0 });
+  g.add(torso);
+  const head = pivot(0, 2.05, 0);
+  const hb = build([
+    box(0, 0, 0, 0.4, 0.45, 0.4, helm, 'helm'),
+    box(0, 0.4, 0.02, 0.08, 0.14, 0.34, verdigris, 'crest'),
+    glow(0, 0.24, -0.2, 0.3, 0.06, 0.03, 0x7fd0ff, visorK, 'visor'),
+  ], { jitter: 0 });
+  head.add(hb);
+  const conePivot = new THREE.Object3D(); conePivot.name = 'conePivot'; conePivot.position.set(0, 0.23, -0.22); head.add(conePivot);
+  g.add(head);
+  const visor = named(hb, 'visor');
+  return finish(g, 'warden', { eyes: [visor], visor, head, conePivot, legs, plinth, halberd: named(torso, 'halberd'), spotY: 2.28 });
+}
+
+// drowner() — the thing under the surface: a low black crocodile shape 0.55 tall × 1.8 long (head toward −Z); 12
+// boxes + a ripple ring. The group origin is the WATER SURFACE: `body` (every box; its belly at body.position.y = 0)
+// is what the AI sinks (−0.7 submerged) and raises (−0.15 surfaced); `ripple` stays on the surface (y 0.02).
+// userData: eyes[2] (0x40ff9a), jaw (pivot at the hinge: rotation.x to gape), body, ripple, ridges[3],
+// update(t) → pulses the ripple scale 0.6 → 1.4 over 1.2 s (fading out) while ripple.visible; wake(k) → a 0.5 s
+// wake: sets the ripple to a tight bright ring scaled by k (0 → 1) for SURGE.
+export function drowner(opts = {}) {
+  const hide = 0x06080a, ridge = 0x102028, eyeK = opts.eyeIntensity != null ? opts.eyeIntensity : 0;
+  const g = new THREE.Group();
+  const body = new THREE.Group();
+  const bb = build([
+    box(0, 0, 0, 0.6, 0.3, 0.8, hide, 'trunk'),
+    box(0, 0.12, -0.65, 0.4, 0.25, 0.5, hide, 'head'),
+    glow(-0.13, 0.32, -0.8, 0.05, 0.05, 0.05, 0x40ff9a, eyeK, 'eyeL'), glow(0.13, 0.32, -0.8, 0.05, 0.05, 0.05, 0x40ff9a, eyeK, 'eyeR'),
+    box(0, 0.3, -0.25, 0.16, 0.25, 0.2, ridge, 'ridge0'), box(0, 0.3, 0.0, 0.14, 0.2, 0.2, ridge, 'ridge1'), box(0, 0.3, 0.25, 0.12, 0.16, 0.2, ridge, 'ridge2'),
+    box(0, 0.04, 0.6, 0.3, 0.18, 0.4, hide, 'tailRoot'), box(0, 0.06, 0.85, 0.16, 0.12, 0.2, ridge, 'tailTip'),
+    box(-0.38, 0, -0.35, 0.16, 0.14, 0.3, hide, 'limbL'), box(0.38, 0, -0.35, 0.16, 0.14, 0.3, hide, 'limbR'),
+  ], { jitter: 0 });
+  body.add(bb);
+  const jaw = pivot(0, 0.12, -0.42);
+  jaw.add(build([box(0, -0.06, -0.24, 0.36, 0.08, 0.46, 0x0c1216, 'jaw')], { jitter: 0 }));
+  body.add(jaw);
+  g.add(body);
+  const rip = ripple(); rip.position.y = 0.02; rip.name = 'ripple'; g.add(rip);
+  const wakeT = { k: 0 };
+  const update = (t) => {
+    if (!rip.visible) return;
+    if (wakeT.k > 0) { rip.scale.setScalar(0.5 + 0.3 * wakeT.k); rip.material.opacity = 0.9; rip.material.emissiveIntensity = 0.8; return; }
+    const ph = (t % 1.2) / 1.2;
+    rip.scale.setScalar(0.6 + 0.8 * ph);
+    rip.material.opacity = 0.9 * (1 - ph * ph);
+    rip.material.emissiveIntensity = 0.4;
+  };
+  const wake = (k) => { wakeT.k = Math.max(0, Math.min(1, k || 0)); };
+  return finish(g, 'drowner', { eyes: [named(bb, 'eyeL'), named(bb, 'eyeR')], jaw, body, ripple: rip,
+    ridges: [0, 1, 2].map(i => named(bb, `ridge${i}`)), update, wake, length: 1.8 });
+}
+
+// falseLight() — the lantern that isn't: the planted lantern's exact silhouette (1.6 tall, wood 0x3a2a1a / iron
+// 0x2a2420) standing on two stilt legs that read as the pole while they are together; 16 boxes.
+// userData: glass (the lure, 0xffc070 k 1.0 — flicker it like a lantern's; k 0 from DARK on), lightY 1.28 (put the
+// PointLight here), eyes[2] (0xff2020; hidden (visible = false) while LIT so the glass stays a clean lantern glass),
+// jaw (pivot: rotation.x 0.9 = dropped), legs[2] (pivots at the tray: rotation.z ±0.25 = splayed), feet[2],
+// setDark(bool) → the pose switch: legs splayed + jaw dropped + glass off *and cold* + eyes shown/hidden (LIT ↔ DARK;
+// the caller still drives eyes[i].material.emissiveIntensity per state), update(t) → the lantern glass flicker.
+export function falseLight(opts = {}) {
+  const wood = 0x3a2a1a, iron = 0x2a2420, glassK = opts.glassIntensity != null ? opts.glassIntensity : 1.0;
+  const g = new THREE.Group();
+  const legs = [], feet = [];
+  for (const s of [-1, 1]) {
+    const p = pivot(s * 0.02, 1.08, 0);
+    const lb = build([box(0, -1.05, 0, 0.06, 1.05, 0.06, wood, 'leg'), box(s * 0.055, -1.08, 0, 0.15, 0.05, 0.3, wood, 'foot')], { jitter: 0 });
+    p.add(lb); g.add(p); legs.push(p); feet.push(named(lb, 'foot'));
+  }
+  const cage = [box(0, 1.08, 0, 0.3, 0.04, 0.3, iron, 'tray')];
+  for (const [x, z] of [[-0.12, -0.12], [0.12, -0.12], [-0.12, 0.12], [0.12, 0.12]]) cage.push(box(x, 1.1, z, 0.04, 0.36, 0.04, iron));
+  cage.push(emissive(box(0, 1.14, 0, 0.22, 0.26, 0.22, 0xffc070, 'glass'), 0xffc070, glassK),
+    box(0, 1.46, 0, 0.3, 0.06, 0.3, iron, 'cap'), box(0, 1.52, 0, 0.12, 0.05, 0.12, iron), box(0, 1.57, 0, 0.04, 0.08, 0.04, iron, 'hook'),
+    glow(-0.05, 1.3, -0.12, 0.05, 0.05, 0.03, 0xff2020, 0, 'eyeL'), glow(0.05, 1.3, -0.12, 0.05, 0.05, 0.03, 0xff2020, 0, 'eyeR'));
+  const cb = build(cage, { jitter: 0 }); g.add(cb);
+  const jaw = pivot(0, 1.14, -0.11);
+  jaw.add(build([box(0, -0.05, -0.02, 0.16, 0.05, 0.06, 0x2a2420, 'jaw')], { jitter: 0 }));
+  g.add(jaw);
+  const glass = named(cb, 'glass'), eyes = [named(cb, 'eyeL'), named(cb, 'eyeR')];
+  for (const e of eyes) e.visible = false;   // an unlit eye box would show as a dark square on the glowing glass
+  const setDark = (dark) => {
+    legs[0].rotation.z = dark ? 0.25 : 0; legs[1].rotation.z = dark ? -0.25 : 0;
+    jaw.rotation.x = dark ? 0.9 : 0;
+    glass.material.emissiveIntensity = dark ? 0 : glassK;
+    glass.material.color.set(dark ? 0x1c1610 : 0xffc070);   // the glass goes cold, not just unlit
+    for (const e of eyes) { e.visible = !!dark; e.material.emissiveIntensity = dark ? 1.0 : 0; }
+  };
+  const update = (t) => { if (glass.material.emissiveIntensity > 0) glass.material.emissiveIntensity = glassK * (0.93 + 0.07 * Math.sin(13 * t)); };
+  return finish(g, 'falseLight', { glass, lightY: 1.28, eyes, jaw, legs, feet, setDark, update });
+}
+
+// brute() — the wall that walks: 2.6 tall, 1.3 wide, hide 0x141210 with lighter plates 0x2a2420 and knuckles
+// 0x3a3028, boulder shoulders and a head sunk between them, two tusks; 20 boxes.
+// userData: eyes[2] (0xff6a20), legs[2] (hip pivots, y 1.12: rotation.x for the stride), feet[2] (the foot meshes
+// inside the leg pivots — dip/lift them for the stomp bob), body (everything above the hips: sway it ±0.06 u per
+// stride via body.position.x, or rotation.z), fists[2], tusks[2], plates[3].
+export function brute(opts = {}) {
+  const hide = 0x141210, plate = 0x2a2420, knuckle = 0x3a3028, tusk = 0x5a5040, eyeK = opts.eyeIntensity != null ? opts.eyeIntensity : 0.3;
+  const g = new THREE.Group();
+  const legs = [], feet = [];
+  for (const s of [-1, 1]) {
+    const p = pivot(s * 0.28, 1.12, 0);
+    const lb = build([box(0, -1.0, 0, 0.32, 1.0, 0.36, hide, 'leg'), box(0, -1.12, -0.04, 0.4, 0.12, 0.5, plate, 'foot')], { jitter: 0 });
+    p.add(lb); g.add(p); legs.push(p); feet.push(named(lb, 'foot'));
+  }
+  const body = new THREE.Group();
+  const bb = build([
+    box(0, 1.0, 0, 0.76, 0.32, 0.5, hide, 'pelvis'),
+    box(0, 1.3, 0, 1.0, 1.0, 0.6, hide, 'torso'),
+    box(-0.425, 2.0, 0.02, 0.45, 0.45, 0.5, plate, 'shoulderL'), box(0.425, 2.0, 0.02, 0.45, 0.45, 0.5, plate, 'shoulderR'),
+    box(-0.5, 0.9, 0.02, 0.28, 1.3, 0.28, hide, 'armL'), box(0.5, 0.9, 0.02, 0.28, 1.3, 0.28, hide, 'armR'),
+    box(-0.5, 0.58, 0.0, 0.34, 0.34, 0.34, knuckle, 'fistL'), box(0.5, 0.58, 0.0, 0.34, 0.34, 0.34, knuckle, 'fistR'),
+    box(0, 2.16, -0.06, 0.36, 0.36, 0.36, hide, 'head'),
+    glow(-0.09, 2.36, -0.25, 0.06, 0.05, 0.04, 0xff6a20, eyeK, 'eyeL'), glow(0.09, 2.36, -0.25, 0.06, 0.05, 0.04, 0xff6a20, eyeK, 'eyeR'),
+    box(-0.13, 2.08, -0.26, 0.08, 0.2, 0.1, tusk, 'tuskL'), box(0.13, 2.08, -0.26, 0.08, 0.2, 0.1, tusk, 'tuskR'),
+    box(0, 2.3, 0.22, 0.6, 0.3, 0.16, plate, 'plate0'), box(0, 2.1, 0.32, 0.5, 0.24, 0.12, plate, 'plate1'), box(0, 1.9, 0.36, 0.4, 0.2, 0.1, plate, 'plate2'),
+  ], { jitter: 0 });
+  body.add(bb); g.add(body);
+  return finish(g, 'brute', { eyes: [named(bb, 'eyeL'), named(bb, 'eyeR')], legs, feet, body,
+    fists: [named(bb, 'fistL'), named(bb, 'fistR')], tusks: [named(bb, 'tuskL'), named(bb, 'tuskR')], plates: [0, 1, 2].map(i => named(bb, `plate${i}`)) });
+}
+
+/* ---------- short-lived bursts (the Brute's lantern smash) ---------- */
+// Both return a Group placed by the caller (feet origin) with userData.step(dt) → true while alive (false once
+// `life` has elapsed: remove + disposeModel it), userData.reset() → restart, userData.done, userData.life.
+// lanternDebris() — 8 boxes (wood splinters, iron ribs, two glowing glass shards) thrown out and up, falling under
+// gravity, fading over 0.9 s.
+export function lanternDebris() {
+  const pieces = [
+    box(0, 0.9, 0, 0.06, 0.4, 0.06, 0x3a2a1a), box(0, 1.0, 0, 0.06, 0.3, 0.06, 0x3a2a1a), box(0, 1.1, 0, 0.3, 0.04, 0.3, 0x2a2420),
+    box(0, 1.2, 0, 0.04, 0.36, 0.04, 0x2a2420), box(0, 1.2, 0, 0.04, 0.3, 0.04, 0x2a2420), box(0, 1.45, 0, 0.3, 0.06, 0.3, 0x2a2420),
+    emissive(box(0, 1.2, 0, 0.12, 0.12, 0.08, 0xffc070), 0xffc070, 1.0), emissive(box(0, 1.25, 0, 0.1, 0.08, 0.1, 0xffc070), 0xffc070, 1.0),
+  ];
+  const g = build(pieces, { jitter: 0 });
+  const life = 0.9, D = { t: 0, done: false, v: [] };
+  const seed = () => {
+    D.t = 0; D.done = false; D.v = [];
+    g.children.forEach((m, i) => {
+      const a = i / g.children.length * TAU + Math.random() * 0.8, s = 1.6 + Math.random() * 1.6;
+      m.position.set(0, pieces[i].y + pieces[i].h / 2, 0); m.rotation.set(0, 0, 0); m.visible = true;
+      m.material.transparent = true; m.material.opacity = 1;
+      D.v.push({ x: Math.cos(a) * s, y: 2.2 + Math.random() * 1.8, z: Math.sin(a) * s, rx: (Math.random() - 0.5) * 12, rz: (Math.random() - 0.5) * 12 });
+    });
+  };
+  const step = (dt) => {
+    if (D.done) return false;
+    D.t += dt;
+    const fade = Math.max(0, 1 - D.t / life);
+    g.children.forEach((m, i) => {
+      const v = D.v[i]; v.y -= 9.8 * dt;
+      m.position.x += v.x * dt; m.position.y += v.y * dt; m.position.z += v.z * dt;
+      if (m.position.y < 0.03) { m.position.y = 0.03; v.y = -v.y * 0.25; v.x *= 0.6; v.z *= 0.6; }
+      m.rotation.x += v.rx * dt; m.rotation.z += v.rz * dt;
+      m.material.opacity = fade;
+    });
+    if (D.t >= life) { D.done = true; return false; }
+    return true;
+  };
+  seed();
+  finish(g, 'lanternDebris', { step, reset: seed, life });
+  Object.defineProperty(g.userData, 'done', { get: () => D.done, enumerable: true });
+  return g;
+}
+// emberBurst({count=24, color=0xffa040}) — additive points rising 0.8 u/s for 0.8 s with a little drift, fading out.
+// Counts as 0 boxes (a Points object). Same step/reset/done/life contract as lanternDebris.
+export function emberBurst(opts = {}) {
+  const n = opts.count || 24, color = opts.color != null ? opts.color : 0xffa040, life = opts.life || 0.8, rise = 0.8;
+  const pos = new Float32Array(n * 3), vel = new Float32Array(n * 3);
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const mat = new THREE.PointsMaterial({ color, size: 0.12, sizeAttenuation: true, transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false });
+  const pts = new THREE.Points(geo, mat); pts.name = 'embers'; pts.frustumCulled = false;
+  const g = new THREE.Group(); g.add(pts);
+  const D = { t: 0, done: false };
+  const seed = () => {
+    D.t = 0; D.done = false; mat.opacity = 1;
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * TAU, r = Math.random() * 0.25;
+      pos[i * 3] = Math.cos(a) * r; pos[i * 3 + 1] = 0.9 + Math.random() * 0.5; pos[i * 3 + 2] = Math.sin(a) * r;
+      vel[i * 3] = (Math.random() - 0.5) * 1.2; vel[i * 3 + 1] = rise * (0.7 + Math.random() * 0.6); vel[i * 3 + 2] = (Math.random() - 0.5) * 1.2;
+    }
+    geo.attributes.position.needsUpdate = true;
+  };
+  const step = (dt) => {
+    if (D.done) return false;
+    D.t += dt;
+    for (let i = 0; i < n * 3; i += 3) { pos[i] += vel[i] * dt; pos[i + 1] += vel[i + 1] * dt; pos[i + 2] += vel[i + 2] * dt; vel[i] *= 0.96; vel[i + 2] *= 0.96; }
+    geo.attributes.position.needsUpdate = true;
+    mat.opacity = Math.max(0, 1 - D.t / life);
+    if (D.t >= life) { D.done = true; return false; }
+    return true;
+  };
+  seed();
+  finish(g, 'emberBurst', { step, reset: seed, life, points: pts, dispose: () => { geo.dispose(); mat.dispose(); if (g.parent) g.parent.remove(g); } });
+  Object.defineProperty(g.userData, 'done', { get: () => D.done, enumerable: true });
+  return g;
+}
+// CREATURE_MODELS: profile → factory (hunter.js looks a record's model up here; base/fast share `hunter`).
+export const CREATURE_MODELS = { base: hunter, fast: hunter, lampwight, warden, drowner, falseLight, brute };
+
+/* ============================================================
    Registry
    ============================================================ */
 export const MODELS = {
   hunter, npc, flask, relic, richRelic, quest, bundle, lantern,
+  lampwight, warden, drowner, falseLight, brute, lanternDebris, emberBurst,
   stairs, elevator, gate, altar, water: waterTile,
   tram, workshop, oilPress, cartTable, shrine, board, flameBase,
   // hub props (merged into two draw calls by world.js; these factories are for models.html / makeModel)

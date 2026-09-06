@@ -1,7 +1,8 @@
 // ui.js — every DOM read/write: HUD, hint, toast, screens, fade/vignette/flash overlays, menus (DESIGN.md §8).
 // Also the two list menus: the main menu (#title, replaces the old click-to-start screen) and the pause menu
 // (#pausemenu), both driven by one keyboard/mouse list component with Controls / Sound / confirm sub-panels.
-// Listens: hunterState (CHASE → "It has seen you"), flameTier (toast), toast, flash, death, hubEnter, begin.
+// Listens: hunterState (CHASE/POUNCE/SURGE → "It has seen you"), flameTier (toast), toast, flash, death, hubEnter, begin.
+// The hint line also appends ctx.hunter.hint() — the per-creature HUD row (DESIGN.md §5.1–5).
 import { CFG, TIERS, LABEL } from './config.js';
 
 export const VERSION = 'prototype v2';
@@ -19,7 +20,8 @@ export function init(c) {
   mainMenu = makeListMenu({ root: dom.title, text: dom.mmtext, table: dom.mmtable, list: dom.mmlist, foot: dom.mmfoot, sub: dom.mmsub });
   pauseMenu = makeListMenu({ root: dom.pausemenu, title: dom.pmtitle, text: dom.pmtext, table: dom.pmtable, list: dom.pmlist, foot: dom.pmfoot });
   const ev = ctx.events;
-  ev.on('hunterState', ({ state, prev }) => { if (state === 'CHASE' && prev !== 'CHASE') ui.seenT = 2; });
+  // "It has seen you": a base/fast/Brute CHASE, a false light's POUNCE and a Drowner's SURGE (DESIGN.md §5.3–5)
+  ev.on('hunterState', ({ state, prev }) => { if (state !== prev && (state === 'CHASE' || state === 'POUNCE' || state === 'SURGE')) ui.seenT = 2; });
   ev.on('flameTier', ({ tier, initial }) => { if (!initial) toast(TIERS[tier - 1].msg); });
   ev.on('toast', ({ msg }) => toast(msg));
   ev.on('flash', () => { ui.flashFx = CFG.flashFx; });
@@ -42,6 +44,7 @@ function updateToast(dt) {
     if (ui.toastQ.length) { el.textContent = ui.toastQ.shift(); el.style.opacity = '1'; ui.toastT = CFG.toastT; }
   } else if (ui.toastT <= 0) ui.toastT -= dt; // short gap between toasts
 }
+const NOT_SAFE = 'Not safe — it will wade in';   // hunter.hint()'s Brute line: it replaces "Safe — it will not enter the light"
 // hint(text): force the bottom hint line ('' clears the override).
 export function hint(text) { ctx.state.hintOverride = text || ''; }
 function setText(key, s) { if (ui.textCache[key] !== s) { ui.textCache[key] = s; ctx.dom[key].textContent = s; } }
@@ -63,11 +66,14 @@ export function hintText() {
   // alarm · action prompt · lamp/safety status — shown together so none hides another
   const parts = [];
   if (ui.seenT > 0) parts.push('It has seen you');
+  // the creature line (DESIGN.md §5.1–5 HUD rows): '' when none applies; hunter.js owns which one
+  const creature = ctx.hunter && typeof ctx.hunter.hint === 'function' ? ctx.hunter.hint() : '';
+  if (creature && !parts.includes(creature)) parts.push(creature);
   const label = targetLabel(ctx.actions.interactTarget());
   if (label) parts.push(label);
   if (p.oil <= 0) parts.push(p.carried.oil ? 'The lamp is dry — [T] pour a flask' : 'The lamp is dry');
   else if (p.lampOn && p.oil < CFG.lowOil) parts.push('Lamp guttering');
-  else if (p.inPool) parts.push('Safe — it will not enter the light');
+  else if (p.inPool && creature !== NOT_SAFE) parts.push('Safe — it will not enter the light');   // a Brute in reach replaces the Safe line
   return parts.join('   ·   ');
 }
 

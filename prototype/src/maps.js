@@ -12,8 +12,13 @@ export const LEGEND = {
   '#': 'wall', 'P': 'pillar', '.': 'floor', 'D': 'deep', 'S': 'stairs', 'V': 'elevator',
   'o': 'item:oil', 'r': 'item:relic', 'R': 'deep+item:rich', 'H': 'hunter', 'F': 'flame',
   'N': 'npc', 'C': 'spot', 'W': 'water', 'X': 'gate', 'A': 'altar', '0-9': 'anchor (hub building)',
+  // DESIGN.md §5.7 — creature spawns (L G Y B keep the cell floor/deep like H; w is a water cell with a spawn)
+  'L': 'creature:lampwight', 'G': 'creature:warden', 'Y': 'creature:falseLight', 'B': 'creature:brute', 'w': 'water+creature:drowner',
 };
-const LEGEND_CHARS = new Set(['#', 'P', '.', 'D', 'S', 'V', 'o', 'r', 'R', 'H', 'F', 'N', 'C', 'W', 'X', 'A', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9']);
+const LEGEND_CHARS = new Set(['#', 'P', '.', 'D', 'S', 'V', 'o', 'r', 'R', 'H', 'F', 'N', 'C', 'W', 'X', 'A', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+  'L', 'G', 'Y', 'B', 'w']);
+// creature legend char → hunter.js profile name (the parser stores the profile as `kind`)
+export const CREATURE_CHARS = { L: 'lampwight', G: 'warden', Y: 'falseLight', B: 'brute', w: 'drowner' };
 
 /* ============================================================
    Zone rows
@@ -24,7 +29,7 @@ const LEGEND_CHARS = new Set(['#', 'P', '.', 'D', 'S', 'V', 'o', 'r', 'R', 'H', 
 const UNDERCROFT_ROWS = [
   '########################################',
   '#DDDDDDDD###############DDDDDDDDDDDDDDD#',
-  '#DDDRDDDD###############DDDDDDCDDRDDDDD#',
+  '#DDDRDDDD###############DDGDDDCDDRDDDDD#',
   '#DNDDDDDD###############DDDoDDDDDDDDDDD#',
   '#DDDDDDDD###############DDDDDDDDDDDDDDD#',
   '####X#############################.#####',
@@ -39,7 +44,7 @@ const UNDERCROFT_ROWS = [
   '####.###########...#################.###',
   '#........#..............#..............#',
   '#..P.....#...P......P...#......P.......#',
-  '#........#..............#........o.....#',
+  '#...B....#..............#........o.....#',
   '#........#..............#..............#',
   '#........#...P......P...#......P...r...#',
   '####.#####..............#..............#',
@@ -79,7 +84,7 @@ const CISTERN_ROWS = [
   '#..WWWW.........WWWWWWWWWW...H..WWWW...#',
   '#..WWWW.........WWWWWWWWWW......WWWW...#',
   '#...WWWW..P...WWWWWWWWWWWWWW...PWWW....#',
-  '#....WWWW.....WWWWWWWWWWWWWW..WWWW.....#',
+  '#....WWWW.....WWWWWWwWWWWWWW..WWWW.....#',
   '#...WWWW......WWWWWWWWWWWWWW....WWW....#',
   '#..WWWW.........WWWWWWWWWW......WWWW...#',
   '#..WWWW.........WWWWWWWWWW......WWWW...#',
@@ -93,7 +98,7 @@ const CISTERN_ROWS = [
   '#....#.....P......WWWWWW....P..........#',
   '#..................................#...#',
   '#..C.#......WWWW........WWWW.......##.##',
-  '#....#......WWWW........WWWW.......#...#',
+  '#....#......WWWW........WWWW..L....#...#',
   '#....#......WWWW.....r..WWWW.......#...#',
   '#....#.P....WWWW........WWWW....P..#...#',
   '#.o..#......................r......#...#',
@@ -116,7 +121,7 @@ const OSSUARY_ROWS = [
   '##DRDDDDDD#DRD#DDDDDDDDD######DDDDDRDD##',
   '##DDDDDDDD#DDDXDDDDDrDDD######DDDDDDDD##',
   '##DDDDDNDD#DRD#DDDDHDDDD######DDDDDDDD##',
-  '##DDDDDDDD#DDD#DDDDDDDDD######DDDDDDDD##',
+  '##DDDDDDDD#DGD#DDDDDDDDD######DDDDDDDD##',
   '##DDDDDDDD#####DDDDDDDDD######DDDDDDDD##',
   '##DDDDDDDD#####DDDDDDDDD######DDDDDDDD##',
   '#####.#############.#############.######',
@@ -129,13 +134,13 @@ const OSSUARY_ROWS = [
   '#.DDDDDD.#############.######.DDDDDD.###',
   '#.DDDDDD.#############.######.DDDDDD.###',
   '#.....................P......C.........#',
-  '#.##..##.########..###.######.#..###.###',
+  '#.##..##.########.Y###.######.#..###.###',
   '#.##o.##.########r.###.######.#r.###.###',
   '#.######.#############.######.######.###',
   '#.######.#############.######.######.###',
   '#.######.#############.######.######.###',
   '#.......P..............................#',
-  '#...####.##..##.DDDDDD.##..##.######...#',
+  '#...####.##..##.DDDDDD.##.Y##.######...#',
   '#.r.####.##o.##.DDDDDD.##o.##.######.r.#',
   '#.######.######.DDDDDD.######.######.###',
   '#.######.######.DDDCDD.######.######.###',
@@ -168,13 +173,13 @@ const SOURCE_ROWS = [
   '#..#DD#DDDDDDDDDDDDDDDDDDDDDDD#DD#DD#..#',
   '#..#DD#DD###################RD#DD#DD#..#',
   '#..#DD#DD#DDDDDDDDDDDDDDDDD#DD#DD#DD#..#',
-  '#..#DD#DD#DDDDDDDDDDDDDDDDD#DD#DD#DD#..#',
+  '#..#DD#DD#DDDDDDDDDDDDDDDDD#DY#DD#DD#..#',
   '#..#DD#DD#DD#############DD#DD#DD#DD#..#',
   '#..#DD#DD#DD#DDDDDDDDDDD#DD#DD#DD#DD#..#',
   '#..#DD#DD#DD#DDDDDDDDDDD#DD#DD#DD#DD#..#',
   '#..#DD#DD#DD#DD#DDDDDDDD#DD#DD#DD#DD#..#',
   '#..#DD#DD#DD#DD#DDDADDDD#DD#DD#DD#DD#..#',
-  '#..#DD#DD#DD#DD#DDDDDDDD#DD#DD#DD#DD#..#',
+  '#..#DD#LD#DD#BD#DDDDDDDD#DD#DD#DD#DD#..#',
   '#..#DD#DD#DD#DD#DDDDDDDD#DD#DD#DD#DD#..#',
   '#..#DD#DD#DD#DD#DDDDDDDD#DD#DD#DD#DD#..#',
   '#..#DD#DD#DD#DD#DDDDDDDD#DD#DD#DD#DD#..#',
@@ -261,46 +266,59 @@ export const PALETTES = {
 // numbers are in `hunterSpeeds`). `npcs` = {id: [cx, cz]} for every N; `npc` = the captive named on the board.
 // `gate` = {tool, cells: [[cx, cz]]} for the X cells. `spots` = contract spots in row-major C order (index =
 // the `spot` field in contracts.js). `loot` = expected item counts (validated). `requires` = access key, and
-// `lockReason` the board text when locked. `intro` is the flavour line shown on zoneEnter.
+// `lockReason` the board text when locked. `intro` is the flavour line shown on zoneEnter, `threat` the one-line
+// creature warning the Departure Board prints under an unlocked zone (DESIGN.md §5.7).
 const speeds = (names) => names.map(n => { const p = HUNTER_PROFILES[n] || HUNTER_PROFILES.base; return { profile: n, ...p.speed, catchR: p.catchR }; });
 export const ZONES = {
   undercroft: {
     id: 'undercroft', name: 'The Undercroft', rows: UNDERCROFT_ROWS, entry: 'S', exit: 'stairs',
     burnMul: 1.0, lampMul: 1.0, deepStyle: 'flat', hunters: ['base'], hunterSpeeds: speeds(['base']),
+    // row-major creature cells: G (26,2) facing E over the NE crypt · B (4,17) leashed to the west wing (DESIGN.md §5.7)
+    creatures: [{ kind: 'warden', facing: 'E', sweep: 75, reach: 9, territory: 8 }, { kind: 'brute', leash: 14 }],
     npc: 'lamplighter', npcs: { lamplighter: [5, 22], deacon: [2, 3] },
     gate: { tool: 'prybar', cells: [[4, 5]], opens: 'the north-west crypt (Deacon Maud, 1 rich relic)' },
     spots: [{ id: 0, cell: [30, 2], label: 'the north-east crypt' }, { id: 1, cell: [16, 29], label: 'the great hall' }],
     loot: { oil: 6, relic: 5, rich: 2 }, points: 31,
     requires: null, lockReason: null, ambience: 'undercroft', palette: PALETTES.undercroft,
-    intro: 'Stone steps, wet with old dark. Something below is listening for light.',
+    intro: 'Stone steps, wet with old dark. Something below is listening for light. A cold beam sweeps the north-east crypt, and something heavy walks the west wing.',
+    threat: 'a hunter, a Warden watching the north-east crypt, a Brute in the west wing',
   },
   cistern: {
     id: 'cistern', name: 'The Cistern', rows: CISTERN_ROWS, entry: 'S', exit: 'stairs',
     burnMul: 1.0, lampMul: 1.0, deepStyle: 'flat', hunters: ['base', 'base'], hunterSpeeds: speeds(['base', 'base']),
+    // w (20,13) in the central lake · L (30,27) in the south-east hall on the way to Ines
+    creatures: [{ kind: 'drowner' }, { kind: 'lampwight' }],
     npc: 'cartographer', npcs: { cartographer: [38, 22] },
     gate: { tool: 'sluice', cells: [[20, 5]], opens: 'the flooded vault (2 rich relics)' },
     spots: [{ id: 0, cell: [20, 19], label: 'the drowned hall' }, { id: 1, cell: [3, 26], label: 'the pump room' }],
     loot: { oil: 4, relic: 5, rich: 2 }, points: 29,
     requires: { building: 'tram' }, lockReason: 'Needs the Tram dock', ambience: 'cistern', palette: PALETTES.cistern,
-    intro: 'The tram groans to a stop above black water. Every step you take in it will be heard.',
+    intro: 'The tram groans to a stop above black water. Every step you take in it will be heard — and something in the south hall drinks flame.',
+    threat: 'two hunters, a Drowner in the lake, a Lampwight in the south hall',
   },
   ossuary: {
     id: 'ossuary', name: 'The Ossuary', rows: OSSUARY_ROWS, entry: 'V', exit: 'elevator',
     burnMul: 1.3, lampMul: 0.85, deepStyle: 'flat', hunters: ['fast'], hunterSpeeds: speeds(['fast']),
+    // G (12,6) facing N inside the reliquary (behind the Censer gate: gateOk) · Y (18,19) · Y (26,25) beside loot
+    creatures: [{ kind: 'warden', facing: 'N', sweep: 75, reach: 9, territory: 8, gateOk: true }, { kind: 'falseLight' }, { kind: 'falseLight' }],
     npc: 'keeper', npcs: { keeper: [7, 5] },
     gate: { tool: 'censer', cells: [[14, 4]], opens: 'the reliquary (2 rich relics)' },
     spots: [{ id: 0, cell: [29, 18], label: 'the east bone-pit' }, { id: 1, cell: [19, 28], label: 'the south vault' }],
     loot: { oil: 6, relic: 7, rich: 5 }, points: 52,
     requires: { building: 'elevator', lightTech: 2 }, lockReason: 'Needs the Elevator and Light-tech II', ambience: 'ossuary', palette: PALETTES.ossuary,
-    intro: 'The cage opens on corridors of stacked bone. The air eats oil; the thing here is quick.',
+    intro: 'The cage opens on corridors of stacked bone. The air eats oil; the thing here is quick. Not every lantern down here is one you planted.',
+    threat: 'a quick hunter, a Warden in the reliquary, two false lights among the alcoves',
   },
   source: {
     id: 'source', name: 'The Source', rows: SOURCE_ROWS, entry: 'V', exit: 'elevator', noBank: true,
     burnMul: 1.0, lampMul: 1.0, deepStyle: 'bands', hunters: ['fast', 'fast'], hunterSpeeds: speeds(['fast', 'fast']),
+    // row-major: Y (29,14) lap 3 · L (7,20) lap 2 · B (13,20) lap 4 (endgame dormancy wakes each at lap − 1)
+    creatures: [{ kind: 'falseLight' }, { kind: 'lampwight' }, { kind: 'brute', leash: 14 }],
     npc: null, npcs: {}, gate: null, spots: [],
     loot: { oil: 4, relic: 2, rich: 2 }, points: 20,
     requires: { tier: 4, rescued: 'deacon' }, lockReason: 'Needs the flame at tier 4 and Deacon Maud', ambience: 'source', palette: PALETTES.source,
-    intro: 'A spiral, turning inward. Each lap is darker than the last. There is no banking here — only the altar.',
+    intro: 'A spiral, turning inward. Each lap is darker than the last. There is no banking here — only the altar. The lights lie down here, and the last ring takes your lanterns.',
+    threat: 'quick hunters that multiply as you descend, a Lampwight, a false light, a Brute on the last ring',
   },
 };
 export const ZONE_ORDER = ['undercroft', 'cistern', 'ossuary', 'source'];
@@ -337,13 +355,13 @@ function deepNeighbourhood(rows, x, z) {
 }
 
 // parseMap(rows, ox, name) → { name, w, h, ox, cells, pool, items, stairs, hunterSpawns[], npcCells[],
-//   spots[], gates[], flame, anchors{}, altar, hunterSpawn (= hunterSpawns[0], v1 compat) }
+//   spots[], gates[], flame, anchors{}, altar, creatures[] ({kind, cx, cz, idx, x, z} row-major), hunterSpawn (= hunterSpawns[0]) }
 // Marker records carry {cx, cz, idx, x, z} (x/z = world centre) so consumers need no extra lookups.
 export function parseMap(rows, ox, name) {
   const h = rows.length, w = rows[0].length;
   for (const r of rows) if (r.length !== w) console.warn(`map ${name}: ragged row "${r}"`);
   const cells = new Uint8Array(w * h), pool = new Uint8Array(w * h);
-  const items = [], hunterSpawns = [], npcCells = [], spots = [], gates = [], anchors = {};
+  const items = [], hunterSpawns = [], npcCells = [], spots = [], gates = [], anchors = {}, creatures = [];
   let stairs = null, flame = null, altar = null;
   const mark = (x, z, extra) => ({ cx: x, cz: z, idx: z * w + x, x: ox + x + 0.5, z: z + 0.5, ...extra });
   for (let z = 0; z < h; z++) for (let x = 0; x < w; x++) {
@@ -366,13 +384,16 @@ export function parseMap(rows, ox, name) {
       case 'N': t = deepIfPocket(); npcCells.push(mark(x, z, {})); break;
       case 'C': t = deepIfPocket(); spots.push(mark(x, z, { id: spots.length })); break;
       case 'F': flame = mark(x, z, {}); break;
+      // creatures (DESIGN.md §5.7): L G Y B keep floor/deep like H; w is a water cell with a Drowner in it
+      case 'L': case 'G': case 'Y': case 'B': t = deepIfPocket(); creatures.push(mark(x, z, { kind: CREATURE_CHARS[ch] })); break;
+      case 'w': t = T.WATER; creatures.push(mark(x, z, { kind: 'drowner' })); break;
       default:
         if (ch >= '0' && ch <= '9') anchors[ch] = mark(x, z, {});
         break;
     }
     cells[z * w + x] = t;
   }
-  return { name, w, h, ox, cells, pool, items, stairs, hunterSpawns, npcCells, spots, gates, flame, anchors, altar,
+  return { name, w, h, ox, cells, pool, items, stairs, hunterSpawns, npcCells, spots, gates, flame, anchors, altar, creatures,
     hunterSpawn: hunterSpawns[0] || null };
 }
 export const parseZone = (id) => parseMap(ZONES[id].rows, 0, id);
@@ -392,13 +413,14 @@ export const toCell = (m, wx, wz) => ({ cx: Math.floor(wx - m.ox), cz: Math.floo
 export const center = (m, cx, cz) => ({ x: m.ox + cx + 0.5, z: cz + 0.5 });
 export const dist2d = (ax, az, bx, bz) => Math.hypot(ax - bx, az - bz);
 
-// BFS distance/parent field over the grid (4-neighbour, blocked = solid ∪ pool unless ignorePools)
+// BFS distance/parent field over the grid (4-neighbour, blocked = solid ∪ pool unless ignorePools).
+// The third argument may also be a predicate blocked(m, cx, cz) → bool (creature movement rules: territory, water body…).
 export function bfsField(m, sx, sz, ignorePools = false) {
   const n = m.w * m.h;
   const dist = new Int16Array(n).fill(-1), parent = new Int32Array(n).fill(-1), q = new Int32Array(n);
   let qh = 0, qt = 0;
   const s = idx(m, sx, sz); dist[s] = 0; q[qt++] = s;
-  const blocked = ignorePools ? isSolid : isBlocked;
+  const blocked = typeof ignorePools === 'function' ? ignorePools : (ignorePools ? isSolid : isBlocked);
   while (qh < qt) {
     const i = q[qh++], cx = i % m.w, cz = (i / m.w) | 0;
     for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
@@ -485,7 +507,8 @@ export function validateMap(rows, meta = {}, { size = 40 } = {}) {
   const m = parseMap(rows, 0, name);
   const count = (ch) => rows.reduce((n, r) => n + (r.split(ch).length - 1), 0);
   const stats = { w, h, S: count('S'), V: count('V'), A: count('A'), H: count('H'), N: count('N'), C: count('C'), X: count('X'), W: count('W'),
-    o: count('o'), r: count('r'), R: count('R'), D: count('D'), P: count('P'), F: count('F') };
+    o: count('o'), r: count('r'), R: count('R'), D: count('D'), P: count('P'), F: count('F'),
+    L: count('L'), G: count('G'), Y: count('Y'), B: count('B'), w: count('w') };
   const spawns = stats.S + stats.V;
   if (isHub) {
     if (stats.F !== 1) err(`hub needs exactly one F, has ${stats.F}`);
@@ -522,6 +545,27 @@ export function validateMap(rows, meta = {}, { size = 40 } = {}) {
   reach('spot', m.spots, false);
   reach('hunter spawn', m.hunterSpawns, true);       // hunters do not open gates
   if (m.altar) reach('altar', [m.altar], true);
+  // creatures (DESIGN.md §5.7): reachable from the spawn with the gates closed unless the meta says gateOk (a Warden
+  // may guard a gated pocket); G in a deep neighbourhood; w in a water body; Y visible from some floor/door cell ≤ 6 u.
+  const cmeta = meta.creatures || [];
+  m.creatures.forEach((c, i) => {
+    const o = cmeta[i] || {}, label = `creature ${c.kind}`;
+    if (!open[c.idx]) err(`${label} at (${c.cx},${c.cz}) unreachable`);
+    else if (!o.gateOk && !closed[c.idx]) err(`${label} at (${c.cx},${c.cz}) is behind a gate (set gateOk to allow)`);
+    if (c.kind === 'warden' && !deepNeighbourhood(rows, c.cx, c.cz)) err(`${label} at (${c.cx},${c.cz}) is not in a deep pocket`);
+    if (c.kind === 'drowner') {
+      const wet = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => cellType(m, c.cx + dx, c.cz + dz) === T.WATER);
+      if (m.cells[c.idx] !== T.WATER || !wet) err(`${label} at (${c.cx},${c.cz}) is not in a water body`);
+    }
+    if (c.kind === 'falseLight') {
+      let seen = false;
+      for (let z = Math.max(0, c.cz - 6); z <= Math.min(h - 1, c.cz + 6) && !seen; z++) for (let x = Math.max(0, c.cx - 6); x <= Math.min(w - 1, c.cx + 6) && !seen; x++) {
+        const ch = rows[z][x]; if (ch !== '.' && ch !== 'D') continue;
+        if (Math.hypot(x - c.cx, z - c.cz) <= 6 && los(m, x + 0.5, z + 0.5, c.cx + 0.5, c.cz + 0.5)) seen = true;
+      }
+      if (!seen) err(`${label} at (${c.cx},${c.cz}) has no floor/deep cell with LOS within 6 u (it must be seen to work)`);
+    }
+  });
   for (const g of m.gates) {
     const ns = isSolid(m, g.cx, g.cz - 1) && isSolid(m, g.cx, g.cz + 1), ew = isSolid(m, g.cx - 1, g.cz) && isSolid(m, g.cx + 1, g.cz);
     if (!ns && !ew) err(`gate at (${g.cx},${g.cz}) is not set in a wall line`);
@@ -535,6 +579,12 @@ export function validateMap(rows, meta = {}, { size = 40 } = {}) {
 
   // metadata agreement
   if (meta.hunters && meta.hunters.length !== m.hunterSpawns.length) err(`meta.hunters has ${meta.hunters.length} entries, map has ${m.hunterSpawns.length} H`);
+  if (meta.creatures || m.creatures.length) {
+    const want = meta.creatures || [];
+    if (want.length !== m.creatures.length) err(`meta.creatures has ${want.length} entries, map has ${m.creatures.length} creature cells`);
+    m.creatures.forEach((c, i) => { if (want[i] && want[i].kind !== c.kind) err(`creature ${i} at (${c.cx},${c.cz}) is ${c.kind}, meta says ${want[i].kind}`); });
+    for (const k of ['warden']) for (const o of want) if (o.kind === k && o.facing && !'NESW'.includes(o.facing)) err(`warden facing '${o.facing}' is not N/E/S/W`);
+  }
   if (meta.npcs) {
     const cells = Object.entries(meta.npcs);
     if (cells.length !== m.npcCells.length) err(`meta.npcs names ${cells.length} NPC(s), map has ${m.npcCells.length} N`);
