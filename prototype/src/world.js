@@ -136,7 +136,7 @@ function applyHubWarmth(tier) {
 }
 
 /* ---------- instanced blocks ---------- */
-function buildBlocks(m, group, meta) {
+function buildBlocks(m, group, meta, { hole = false } = {}) {
   const box = (w, h, d) => new THREE.BoxGeometry(w, h, d);
   const pal = meta && meta.palette ? meta.palette : MAPS.PALETTES.hub;
   // blocks are 2% oversize so neighbouring instances overlap: separate boxes sharing an edge leave
@@ -160,7 +160,7 @@ function buildBlocks(m, group, meta) {
       if (bands) kinds[lap === 0 ? 'floor' : 'deep'].list.push({ ...p, lap });
       else kinds.deep.list.push(p);
     } else if (t === T.WATER) kinds.water.list.push(p);
-    else kinds.floor.list.push({ ...p, lap });
+    else if (!(hole && t === T.STAIRS)) kinds.floor.list.push({ ...p, lap });   // hub: open stairwell under the S cell
     kinds.ceil.list.push({ ...p, lap });
     if (t === T.PILLAR) kinds.pillar.list.push({ ...p, lap });
   }
@@ -188,6 +188,13 @@ function buildBlocks(m, group, meta) {
 // elevator cage. Both models are decorative — no collision — and scaled to stay inside their cell.
 function buildStairsMarker(m, group, { hub = false } = {}) {
   const p = center(m, m.stairs.cx, m.stairs.cz);
+  if (hub) {
+    // the way DOWN: a stairwell sunk into the floor (buildBlocks leaves the S cell open), steps dropping south,
+    // away from the flame, into a black passage; a cool landing lamp so a tier-1 arrival is not pitch black
+    const st = models.stairsDown(); st.position.set(p.x, 0, p.z); st.name = 'stairs'; group.add(st);
+    const light = new THREE.PointLight(0x9ab0ff, 0.9, 4.5, 2); light.position.set(p.x, 1.2, p.z - 0.4); group.add(light);
+    return;
+  }
   const marker = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.06, 0.9),
     new THREE.MeshLambertMaterial({ color: 0x1a2230, emissive: 0x2a4a9a, emissiveIntensity: 0.55 }));
   marker.position.set(p.x, 0.03, p.z);
@@ -197,11 +204,9 @@ function buildStairsMarker(m, group, { hub = false } = {}) {
     const e = models.elevator(); e.position.set(p.x, 0, p.z); e.name = 'elevator'; group.add(e);
     const light = new THREE.PointLight(0xffc070, 1.2, 5, 2); light.position.set(p.x, e.userData.lightY || 2.4, p.z); group.add(light);
   } else {
+    // zones: the way UP, rising north toward the surface
     const st = models.stairs(); st.scale.setScalar(0.8); st.position.set(p.x, 0, p.z); st.name = 'stairs';
-    if (hub) st.rotation.y = Math.PI;
     group.add(st);
-    // the hub stairs sit 9 u from the flame: a small landing lamp so a tier-1 arrival is not pitch black
-    if (hub) { const light = new THREE.PointLight(0x9ab0ff, 0.9, 4.5, 2); light.position.set(p.x, 1.2, p.z + 0.4); group.add(light); }
   }
 }
 
@@ -209,7 +214,7 @@ function buildStairsMarker(m, group, { hub = false } = {}) {
 export function buildHub() {
   const map = MAPS.parseHub();
   const group = new THREE.Group(); group.name = 'hub';
-  buildBlocks(map, group, { palette: MAPS.PALETTES.hub });
+  buildBlocks(map, group, { palette: MAPS.PALETTES.hub }, { hole: true });
   buildStairsMarker(map, group, { hub: true });
   buildSconces(map, group);
   map.blockMask = new Uint8Array(map.w * map.h);   // HUB_BLOCK bits: props here, buildings/NPCs/flame from hub.js

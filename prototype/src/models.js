@@ -257,6 +257,23 @@ export function stairs() {
   const g = build(b, { jitter: 0.04 });
   return finish(g, 'stairs', { rune: named(g, 'rune') });
 }
+// stairsDown() — the hub's descent: a 1x1 stairwell sunk below the floor (the floor block under it is skipped),
+// five steps dropping toward +Z, shaft walls, a black passage mouth at the bottom and a rune glow; 12 boxes.
+// Origin at floor level in the cell centre; nothing rises above y = 0. Decorative — no collision.
+export function stairsDown() {
+  const stone = 0x4e4e5c, wall = 0x2a2a34, b = [];
+  const bottom = -1.4;
+  for (let i = 0; i < 5; i++) { const top = -0.24 * (i + 1); b.push(box(0, bottom, -0.4 + 0.2 * i, 0.9, top - bottom, 0.22, stone, `step${i}`)); }
+  b.push(box(0, bottom - 0.06, 0, 1.0, 0.06, 1.0, 0x1a1a22, 'pitFloor'));
+  b.push(box(-0.5, bottom, 0, 0.06, -bottom, 1.02, wall, 'wallL'), box(0.5, bottom, 0, 0.06, -bottom, 1.02, wall, 'wallR'));
+  b.push(box(0, bottom, -0.5, 1.02, -bottom, 0.06, wall, 'wallN'));
+  b.push(box(0, bottom, 0.5, 1.02, 0.2, 0.06, wall, 'lintel'));                       // low sill: the passage continues below it
+  b.push(box(0, bottom, 0.49, 0.9, -bottom - 0.2, 0.02, 0x020204, 'void'));            // the black mouth of the way down
+  b.push(glow(0, bottom + 0.55, 0.47, 0.4, 0.16, 0.03, 0x4060ff, 0.9, 'rune'));
+  b.push(glow(0, -0.02, -0.48, 0.9, 0.02, 0.06, 0x2a4a9a, 0.55, 'sill'));
+  const g = build(b, { jitter: 0.04 });
+  return finish(g, 'stairsDown', { rune: named(g, 'rune') });
+}
 // elevator() — cage: floor, 4 posts, 8 rails (waist + top ring), roof, cable and a hanging lamp; 19 boxes, 3.5 tall.
 // userData.lamp = the glowing lamp mesh, lightY = 2.4. Decorative: the player spawns inside the cage.
 export function elevator() {
@@ -340,6 +357,7 @@ export function tram() {
   ];
   for (const [x, z] of [[-0.55, -0.32], [0.55, -0.32], [-0.55, 0.32], [0.55, 0.32]]) cb.push(box(x, 0.05, z, 0.3, 0.3, 0.1, 0x2a2a2a));
   const cart = build(cb, { jitter: 0.04 });
+  cart.rotation.y = Math.PI / 2;   // long axis along the rails (Z); wheels roll along Z
   const g = new THREE.Group(); g.add(rails); g.add(cart);
   return finish(g, 'tram', { cart, lamp: named(cart, 'lamp') });
 }
