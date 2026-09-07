@@ -1,17 +1,24 @@
-// save.js — persistent state (DESIGN-v2 §8). `data` is the live object (ctx.save). Key `undercroft-v2`,
-// written ≤ 4×/s (debounced 250 ms) on every emitted event and on pagehide. Imports v1 `undercroft-proto`
-// (points/bankedOil) once; also keeps mirroring {points, bankedOil} to the v1 key for v1 tooling.
+// save.js — persistent state (DESIGN.md §11, DESIGN.md §3.6). `data` is the live object (ctx.save). Key
+// `undercroft-v2`, written ≤ 4×/s (debounced 250 ms) on every emitted event and on pagehide. Imports v1
+// `undercroft-proto` (points/bankedOil) once; also keeps mirroring {points, bankedOil} to the v1 key for v1 tooling.
+//
+// v3 (DESIGN.md §3.6): `shortcuts = {zoneId: [shortcutId, …]}` joins `gatesOpened`, which now also holds stable
+// string ids ({zoneId: ['prybar']}) instead of cell indices. A v2 record is migrated on load: everything else is kept
+// verbatim, but `explored` is DROPPED (a 40×40 bitset would light random cells once a zone is re-authored bigger) and
+// numeric `gatesOpened` entries are dropped (they were 40×40 cell indices) — the only cost is one E press on a gate
+// whose tool the save already owns. Unknown entry types are ignored, never crashed on.
 import { SAVE_KEY, SAVE_KEY_V1, AUDIO, TIERS } from './config.js';
 
 export const DEBOUNCE_MS = 250;
 
 function defaults() {
   return {
-    v: 2, points: 0, oil: 0, relics: 0, rich: 0, lightTech: 0, reservoir: 0,
+    v: 3, points: 0, oil: 0, relics: 0, rich: 0, lightTech: 0, reservoir: 0,
     buildings: { workshop: false, press: false, cart: false, shrine: false, tram: false, elevator: false },
     rescued: { lamplighter: false, cartographer: false, keeper: false, deacon: false },
     tools: { prybar: false, sluice: false, censer: false },
-    gatesOpened: {},
+    gatesOpened: {},     // {zoneId: [gateId]} — ids (the zone's tool), never cell indices
+    shortcuts: {},       // {zoneId: [shortcutId]} — DESIGN.md §3.6
     contracts: { active: [], done: [], progress: {} },
     zoneSelected: 'undercroft', blessing: false,
     endings: { cage: false, dawn: false, night: false },
@@ -30,7 +37,7 @@ function mergeInto(dst, src) {
   for (const k of Object.keys(dst)) {
     if (!(k in src)) continue;
     const d = dst[k], s = src[k];
-    if (isObj(d)) { if (k === 'gatesOpened' || k === 'explored' || k === 'progress') { if (isObj(s)) dst[k] = { ...s }; } else mergeInto(d, s); }
+    if (isObj(d)) { if (k === 'gatesOpened' || k === 'shortcuts' || k === 'explored' || k === 'progress') { if (isObj(s)) dst[k] = { ...s }; } else mergeInto(d, s); }
     else if (Array.isArray(d)) { if (Array.isArray(s)) dst[k] = s.slice(); }
     else if (typeof d === 'number') { if (Number.isFinite(s)) dst[k] = s; }
     else if (typeof d === 'boolean') dst[k] = !!s;
@@ -42,14 +49,29 @@ function mergeInto(dst, src) {
 let timer = 0, dirty = false;
 function readKey(key) { try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch (e) { return null; } }
 
-// load(): fill `data` from localStorage (v2), or import the v1 record once. Returns `data`.
+// migrateV2(rec) → a v3-shaped copy of a v2 record (DESIGN.md §3.6): keep points/oil/relics/tools/buildings/
+// rescued/contracts/endings/stats verbatim, drop `explored` and drop numeric `gatesOpened` entries.
+function migrateV2(rec) {
+  const out = { ...rec, v: 3, explored: {} };
+  const go = {};
+  if (isObj(rec.gatesOpened)) for (const [zone, list] of Object.entries(rec.gatesOpened)) {
+    if (Array.isArray(list)) { const keep = list.filter(e => typeof e === 'string'); if (keep.length) go[zone] = keep; }
+  }
+  out.gatesOpened = go;
+  if (!isObj(rec.shortcuts)) out.shortcuts = {};
+  return out;
+}
+// load(): fill `data` from localStorage (v2 → migrated, or v3), or import the v1 record once. Returns `data`.
 export function load() {
   Object.assign(data, defaults());
-  const v2 = readKey(SAVE_KEY);
-  if (v2 && v2.v === 2) mergeInto(data, v2);
+  const rec = readKey(SAVE_KEY);
+  const v = rec && typeof rec === 'object' ? rec.v | 0 : 0;
+  const known = v === 2 || v === 3;
+  if (known) mergeInto(data, v === 2 ? migrateV2(rec) : rec);
+  data.v = 3;
   if (!data.importedV1) {
     const v1 = readKey(SAVE_KEY_V1);
-    if (v1 && Number.isFinite(v1.points) && !(v2 && v2.v === 2)) { data.points = Math.max(0, v1.points | 0); data.oil = Math.max(data.oil, v1.bankedOil | 0); }
+    if (v1 && Number.isFinite(v1.points) && !known) { data.points = Math.max(0, v1.points | 0); data.oil = Math.max(data.oil, v1.bankedOil | 0); }
     data.importedV1 = true;
   }
   data.points = Math.max(0, data.points | 0);

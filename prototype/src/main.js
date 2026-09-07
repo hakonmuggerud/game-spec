@@ -113,7 +113,7 @@ function updatePlayer(dt) {
   const c = toCell(player.map, player.x, player.z), t = cellType(player.map, c.cx, c.cz);
   player.onDeep = t === T.DEEP;
   player.inWater = t === T.WATER;
-  player.lap = ctx.zone.meta && ctx.zone.meta.deepStyle === 'bands' && state.mode === 'ZONE' ? MAPS.lapOf(c.cx, c.cz) : 0;
+  player.lap = ctx.zone.meta && ctx.zone.meta.deepStyle === 'bands' && state.mode === 'ZONE' ? MAPS.lapOf(c.cx, c.cz, player.map) : 0;
   player.inPool = state.mode === 'ZONE' && ctx.lanterns.some(l => dist2d(l.x, l.z, player.x, player.z) <= CFG.poolR);
 
   // camera
@@ -296,7 +296,25 @@ function gateTarget() {
   }
   return null;
 }
-// interactTarget(): what E would do right now, in DESIGN-v2 order: endgame → npc → hub → items → gates → stairs.
+// shortcutTarget(): the `=` door in reach (CFG.interactR + 0.5, and facing it). Mirrors gateTarget(), but a shortcut
+// opens from ONE side only (DESIGN.md §3.6): from the far side E lifts the bars for good and toasts; from the
+// barred side the hint reads "Barred from the other side" and E only beeps (uiError, no toast spam).
+function shortcutTarget() {
+  const z = ctx.zone; if (!z.map || !z.shortcuts || !z.shortcuts.length) return null;
+  const fx = -Math.sin(player.yaw), fz = -Math.cos(player.yaw);
+  for (const s of z.shortcuts) {
+    if (s.open) continue;
+    const p = center(z.map, s.cx, s.cz), dx = p.x - player.x, dz = p.z - player.z, d = Math.hypot(dx, dz);
+    if (d > CFG.interactR + 0.5 || dx * fx + dz * fz <= 0) continue;
+    const st = world.shortcutStatus(s, player.x, player.z);
+    if (!st.canOpen) return { type: 'shortcut', id: s.id, name: s.name, cx: s.cx, cz: s.cz, barred: true,
+      label: 'Barred from the other side', run: () => { events.emit('uiError', { reason: 'shortcutBarred', id: s.id }); return false; } };
+    return { type: 'shortcut', id: s.id, name: s.name, cx: s.cx, cz: s.cz, barred: false, label: '[E] Lift the bars',
+      run: () => { const ok = world.openShortcut(s.cx, s.cz); if (ok) ui.toast(`The bars fall. ${s.name} is open for good.`); return ok; } };
+  }
+  return null;
+}
+// interactTarget(): what E would do right now, in order: endgame → npc → hub → items → gates → shortcuts → stairs.
 function interactTarget() {
   if (fade.mode === 'out' || state.paused) return null;
   if (state.mode !== 'ZONE' && state.mode !== 'HUB') return null;
@@ -312,6 +330,7 @@ function interactTarget() {
     }
     if (best) return { type: 'item', item: best };
     const g = gateTarget(); if (g) return g;
+    const sc = shortcutTarget(); if (sc) return sc;
   }
   if (m && m.stairs) {
     const s = center(m, m.stairs.cx, m.stairs.cz);
@@ -643,6 +662,7 @@ function frame() {
    ============================================================ */
 Object.assign(ctx.actions, {
   begin, descend, bank, flash, plantLantern, interact, interactTarget, topUp, toggleLamp, returnToHub, die,
+  shortcutTarget, gateTarget,
   enterHub, openMenu, closeMenu, transition, spawnAt, describe,
   // menus (DESIGN §2): main menu, pause menu, save clearing
   openMainMenu: toMainMenu, toMainMenu, openPause, closePause, clearSave, newGame,

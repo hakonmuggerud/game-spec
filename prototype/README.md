@@ -29,7 +29,7 @@ New Game locks the pointer and starts the game; New Game asks for confirmation w
 | F | Toggle handlamp (off = stealth, burns no oil) |
 | Q | Flash: spend oil (15, less with light-tech) to stagger the hunter in front of you (creatures react their own way — see Creatures) |
 | R | Plant lantern: spend oil (20) to create a safe pool hunters will not enter (the Brute wades in and smashes it) |
-| E | Interact: pick up / free NPC / open gate / bank at stairs or cage / talk / build / descend · confirm in menus |
+| E | Interact: pick up / free NPC / open a tool gate / **lift a shortcut's bars from its far side** / bank at stairs or cage / talk / build / descend · confirm in menus |
 | T | Pour a carried oil flask into the lamp (+25 oil) |
 | M · [ · ] | Mute · volume down / up (also in the Sound panel of either menu) |
 | Tab | Minimap (needs the Cartographer's Table) |
@@ -46,7 +46,8 @@ endings, minimap) without a reload; sound settings are kept.
 
 1. **Hub** ("The Last Lantern"): safe, warm, one great flame. Read the Departure Board, talk to rescued
    NPCs, build, then take the stairs / tram / elevator (all go to the zone chosen on the board).
-2. **Descend** with 50–80 oil by flame tier (+15 per Oil Press reservoir level).
+2. **Descend** with 45–60 oil by flame tier (+15 per Oil Press reservoir level). A full clear of a zone is 950–1930
+   cells of walking on the first visit — you will not do it in one run, and you are not meant to.
 3. **Loot** oil flasks (1 pt), relics (3), rich relics (5). Hunters are drawn to a lit lamp with line of
    sight (12 u), to sprinting (9 u) and to wading (7 u). Douse, flash, or hide in a planted pool — and read
    the **Creatures** table below: each of the five creatures breaks one of those three answers.
@@ -54,13 +55,31 @@ endings, minimap) without a reload; sound settings are kept.
    rich relics) to spend at the hub. A following NPC within 4 u is rescued.
 5. **Flame grows** at 6 / 15 / 30 points (tiers 2–4), lighting hub alcoves and unlocking the tram (tier 2)
    and elevator (tier 3). Die and carried loot drops as a retrievable bundle; everything else persists.
+6. **Open the shortcuts.** Every zone has three barred doors that only open from the far side (below). Each run you
+   reach one more of them, and the zone permanently gets smaller: the same full clear drops to 56–68 % of its first-run
+   length, which is what turns a zone you survived into a zone you can work.
 
-| Zone | Opens with | What hunts you | Notes |
-|---|---|---|---|
-| The Undercroft | start | 1 hunter + Warden (NE crypt) + Brute (west wing) | Wick captive; Deacon Maud behind a Pry Bar gate |
-| The Cistern | Tram dock (120 oil, tier 2) | 2 hunters + Drowner (the lake) + Lampwight (south hall) | water slows you (×0.55) and is heard 7 u away; Sluice Key gate |
-| The Ossuary | Elevator (250 oil + 4 relics, tier 3) + Light-tech II | 1 quick hunter + Warden (reliquary) + 2 false lights | oil burns ×1.3, lamp ×0.85; Censer gate |
-| The Source | flame tier 4 + Deacon Maud rescued | 2 quick hunters + 1 more at laps 3 and 4, Lampwight (lap 2), false light (lap 3), Brute (lap 4) | spiral, darker per lap, no banking; the altar |
+| Zone | Size | Opens with | What hunts you | Notes |
+|---|---|---|---|---|
+| The Undercroft | 62×62 · 13 regions (4 deep) | start | 1 hunter (great hall) + Warden (NE crypt) + Brute (west wing) | Wick captive in the west wing; Deacon Maud behind a Pry Bar gate. 3 shortcuts |
+| The Cistern | 64×64 · 11 regions (1 deep, 1588 water cells) | Tram dock (120 oil, tier 2) | 2 hunters + Drowner (the drowned hall) + Lampwight (the filter beds) | water slows you (×0.55) and is heard 7 u away; Sluice Key gate to the flooded vault. 3 shortcuts |
+| The Ossuary | 62×62 · 13 regions (6 deep), 63 % wall | Elevator (250 oil + 4 relics, tier 3) + Light-tech II | 1 quick hunter (the Spine) + Warden (the reliquary) + 2 false lights | oil burns ×1.3, lamp ×0.85; Censer gate. Tightest corridors in the ruin. 3 shortcuts |
+| The Source | 60×60 · laps 0–5 · 21 regions | flame tier 4 + Deacon Maud rescued | 2 quick hunters + 1 more at laps 3 and 4, Lampwight (lap 2), false light (lap 3), Brute (lap 4) | descending spiral, darker per lap, no banking; the altar at the centre. 3 fissures |
+
+### Shortcuts
+
+Every zone has **three barred doors** — the Source calls its three fissures. From the entrance side they are a
+portcullis you cannot open: the hint reads *"Barred from the other side"* and that is a promise, not a wall. Reach the far side the long way round and one
+**[E]** lifts the bars, with no tool and no cost. That door is then **open for ever**: it survives death, re-entry and
+closing the game, and the next expedition walks straight through it.
+
+The point is the walk. A first descent into the Undercroft is a ~950-cell full clear; with its three doors open the same
+clear is 640. The Cistern goes 1002 → 678, the Ossuary 1082 → 638, the Source 1926 → 1086. At least one door per zone
+links a deep region back to within sight of the stairs — the Undercroft's Nave Door is barred 8 cells from where you
+spawn and opens from a pocket 72 cells away, and after that the rich relic in the nave apron is a 12-cell errand.
+
+Barred doors read dim green on the Cartographer's minimap and mint once opened, so the map remembers which promises you
+have kept. They are **not** the tool gates (`X`, brown): those need the zone's tool and open from either side.
 
 ## Creatures
 
@@ -71,11 +90,11 @@ light play rather than by running. The Source's three wake one lap before you re
 | Creature | Zone (cell) | What draws it | How to escape it | Kills? |
 |---|---|---|---|---|
 | **Hunter** | all zones | a lit lamp with line of sight 12 u · sprinting 9 u · wading 7 u · walking dark 2.5 u · standing still 1 u | douse and walk (it loses you after 3–4 s), stand in a planted pool, or **Q** flash it (3 s frozen, 4 s dazed) | yes |
-| **Lampwight** — the light-drinker | Cistern (30,27) · Source (7,20) lap 2 | only a **lit lamp or flash, 24 u** with LOS — twice a hunter's reach. A doused player is invisible to it at any range | **[F] douse**: it loses you in 2 s. A pool repels it, the flash freezes it 3 s. Never outrun it while lit | no — it drinks the flame: −12 oil, lamp out, wick cold 2 s, then 5 s sated |
-| **Warden** — the sentinel | Undercroft (26,2) · Ossuary (12,6) reliquary | its cyan cone: a lit lamp 9 u inside ±35° of where it is looking (the cone sweeps ±75°), or heat within 1.2 u; then any lit lamp inside its ground | **leave its ground** (8 u from the post) or go dark for 6 s — it walks home. The flash only makes it flinch 0.5 s. A dark player may walk right past its post | yes, while chasing / returning |
-| **Drowner** — under the surface | Cistern (20,13), the central lake | you in or beside **its** water within 6 u while lit, sprinting or wading. It never leaves that body of water | **get one full cell back from the shore** — its lunge reaches ~0.4 u onto land. A lantern in the shallows is an island; the flash forces it under; no stimulus for 4 s and it sinks | yes, while surging |
-| **False light** — the lantern that isn't | Ossuary (18,19) and (26,25) · Source (29,14) lap 3 | nothing but **proximity**: 3 u with LOS. Dousing does not help — it is a trap, not a hunter. It looks exactly like a planted lantern, but casts no safe pool | **check before you trust a glow**: flash it while it still glows and it is revealed and flees; a pool is an absolute wall to its lunge; and 3 u is a wide berth. The flash also aborts a lunge | yes, during the 1.5 s lunge |
-| **Brute** — the wall that walks | Undercroft (4,17) west wing · Source (13,20) lap 4 | short senses: a lit lamp 8 u, sprinting 6 u, wading 5 u, walking dark 1.5 u | **douse and walk away** — it is as slow as your walk (2.6 u/s) and corners badly; from point-blank, sprint. Pools do **not** stop it: it wades in at half speed, smashes the lantern and can catch you inside. The flash does nothing but make it snort | yes, even inside a pool |
+| **Lampwight** — the light-drinker | Cistern (46,52) · Source (13,30) lap 2 | only a **lit lamp or flash, 24 u** with LOS — twice a hunter's reach. A doused player is invisible to it at any range | **[F] douse**: it loses you in 2 s. A pool repels it, the flash freezes it 3 s. Never outrun it while lit | no — it drinks the flame: −12 oil, lamp out, wick cold 2 s, then 5 s sated |
+| **Warden** — the sentinel | Undercroft (42,10) · Ossuary (19,9) reliquary | its cyan cone: a lit lamp 9 u inside ±35° of where it is looking (the cone sweeps ±75°), or heat within 1.2 u; then any lit lamp inside its ground | **leave its ground** (8 u from the post) or go dark for 6 s — it walks home. The flash only makes it flinch 0.5 s. A dark player may walk right past its post | yes, while chasing / returning |
+| **Drowner** — under the surface | Cistern (31,29), the drowned hall | you in or beside **its** water within 6 u while lit, sprinting or wading. It never leaves that body of water | **get one full cell back from the shore** — its lunge reaches ~0.4 u onto land. A lantern in the shallows is an island; the flash forces it under; no stimulus for 4 s and it sinks | yes, while surging |
+| **False light** — the lantern that isn't | Ossuary (22,22) and (52,38) · Source (41,26) lap 3 | nothing but **proximity**: 3 u with LOS. Dousing does not help — it is a trap, not a hunter. It looks exactly like a planted lantern, but casts no safe pool | **check before you trust a glow**: flash it while it still glows and it is revealed and flees; a pool is an absolute wall to its lunge; and 3 u is a wide berth. The flash also aborts a lunge | yes, during the 1.5 s lunge |
+| **Brute** — the wall that walks | Undercroft (5,42) west wing · Source (30,23) lap 4 | short senses: a lit lamp 8 u, sprinting 6 u, wading 5 u, walking dark 1.5 u | **douse and walk away** — it is as slow as your walk (2.6 u/s) and corners badly; from point-blank, sprint. Pools do **not** stop it: it wades in at half speed, smashes the lantern and can catch you inside. The flash does nothing but make it snort | yes, even inside a pool |
 
 ## NPCs, contracts, services
 
@@ -113,15 +132,24 @@ stats, `save.endings` records each, and the Source stays open for replays.
 
 ## Known gaps vs the spec
 
-- Seven creature profiles off one FSM driver, but still no burning oil to repel/kill and no shortcuts inside zones.
-- Expeditions run minutes, not 20–40; numbers are placeholders, not balanced; no difficulty curve.
+- Seven creature profiles off one FSM driver, but still no burning oil to repel or kill anything.
+- Expedition length is closer: a first-visit full clear is 6–12 minutes of pure walking (Undercroft 6.1, Cistern 7.9,
+  Ossuary 6.9, Source 12.3), and 2–3× that at a real player's pace with vigils, escorts and deaths — but a 20–40 minute
+  expedition still comes from the map being long rather than from anything happening along the way.
+- The shortcuts make a zone shrink with mastery, but nothing else changes between runs: no layout variation, no restock,
+  no difficulty curve, and the four maps are handcrafted one-offs.
+- Balance is measured, not tuned: the oil model says only the Source cannot afford a lit full clear, so the other three
+  zones still forgive a lamp left burning.
 - Dialogue is one line per NPC; no narrative beyond zone intros, lap lines and the ending texts.
 - Blocky instanced meshes rather than true voxels; no sound assets (all WebAudio synthesis).
 
 ## Files (`src/`)
 
-`config.js` numbers and key bindings · `maps.js` ASCII maps, zone metadata, parser, grid helpers (BFS, LOS) ·
-`models.js` voxel model factories · `world.js` instanced geometry, items, lanterns, gates, water, collision ·
+`config.js` numbers and key bindings · `maps.js` the legend, per-zone tuning, palettes, the parser, grid helpers
+(BFS, LOS, route walks) and map validation · **`maps/undercroft.js` `maps/cistern.js` `maps/ossuary.js`
+`maps/source.js`** one file per zone, each exporting `ID SIZE ROWS REGIONS SHORTCUTS ANCHORS META` — the ASCII map,
+its named regions, its shortcut doors, the grid cells the headless tests teleport to, and every map-shaped number ·
+`models.js` voxel model factories · `world.js` instanced geometry, items, lanterns, gates, shortcut doors, water, collision ·
 `hunter.js` senses, the shared FSM driver and the per-creature profile table (hunter · lampwight · warden · drowner · false light · brute) · `npc.js` captives, follower AI, hub residents, dialogue · `contracts.js`
 contract state machine and HUD lines · `hub.js` flame tiers, buildings, services, board, minimap, blessing ·
 `endgame.js` Source laps, altar, endings · `audio.js` procedural sound · `save.js` persistence · `ui.js` DOM

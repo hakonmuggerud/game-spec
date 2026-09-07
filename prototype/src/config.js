@@ -7,7 +7,15 @@ export const SAVE_KEY_V1 = 'undercroft-proto';   // v1 key: imported once, and s
 
 export const CFG = {
   walk: 2.6, sprint: 4.2, radius: 0.3, eye: 1.6, fov: 75, fovSprint: 80, lookKeys: 1.9, mouseSens: 0.002,
-  oilMax: 100, startOil: [50, 60, 70, 80], burn: 0.5, deepBurnMul: 1.5, lowOil: 20,
+  // startOil / lowOil re-tuned for the enlarged maps (DESIGN.md §3.3; measured by scratchpad/oil-model.mjs):
+  //  * startOil was a third of a run's oil budget on the 40x40 maps (6 flasks); with 7-10 flasks spread over a
+  //    950-1926 cell route it is now a sixth, so the old 50-80 left a lit-the-whole-way run a 20-30 % cushion in the
+  //    Undercroft and the Ossuary. Trimmed 5-20 so the lamp is a decision again from the first minute, while a
+  //    doused-by-default run still finishes any zone with 190+ oil to spare.
+  //  * lowOil ("Lamp guttering" + the vignette) was calibrated when the farthest cell was ~40 BFS from the stairs.
+  //    Eccentricity is now 144 / 220 / 334 / 955 cells, and 20 oil only buys 40 s = ~104 cells of lit walking, so the
+  //    warning used to arrive long after the point of no return. 35 oil = ~182 cells, enough to turn around.
+  oilMax: 100, startOil: [45, 50, 55, 60], burn: 0.5, deepBurnMul: 1.5, lowOil: 35,
   lampColor: 0xffb265, lampInt: 6.0, lampDist: 11, deepLampMul: 0.6,
   flashCost: 15, flashCd: 1.5, flashDur: 0.15, flashMul: 8, flashRange: 7, flashDot: 0.4, flashFx: 0.1,
   lanternCost: 20, lanternCd: 1.0, lanternMax: 4, poolR: 2.5, flaskOil: 25,

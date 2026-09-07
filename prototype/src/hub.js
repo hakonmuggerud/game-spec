@@ -673,13 +673,16 @@ function zoneMap(id) {
   if (!parsed[id] && ctx.maps && ctx.maps.parseZone && ZONES[id]) parsed[id] = ctx.maps.parseZone(id);
   return parsed[id] || null;
 }
+const b64len = (s) => { try { return atob(s).length; } catch (e) { return -1; } };
 // exploredBits(zoneId) → Uint8Array bitset (idx = cz·w + cx), loaded from save.explored on first use.
+// A stored bitset whose byte length does not match this grid was written for a different map size (a zone re-authored
+// bigger, DESIGN.md §3.3): it is dropped rather than stretched, which would light random cells.
 export function exploredBits(id) {
   if (explored[id]) return explored[id];
   const z = ZONES[id]; if (!z) return null;
   const n = Math.ceil(z.rows.length * z.rows[0].length / 8);
   const s = save().explored && save().explored[id];
-  explored[id] = typeof s === 'string' && s ? unb64(s, n) : new Uint8Array(n);
+  explored[id] = typeof s === 'string' && s && b64len(s) === n ? unb64(s, n) : new Uint8Array(n);
   return explored[id];
 }
 const bitSet = (bits, i) => !!(bits[i >> 3] & (1 << (i & 7)));
@@ -738,7 +741,11 @@ function toggleMinimap() {
   return !cv.hidden;
 }
 const CELL_COLOR = { [T.FLOOR]: '#2a2a33', [T.DEEP]: '#16161f', [T.WATER]: '#1a2a3a', [T.WALL]: '#555555', [T.PILLAR]: '#666666',
-  [T.GATE]: '#8a6a3a', [T.STAIRS]: '#2a2a33', [T.ELEVATOR]: '#2a2a33', [T.ALTAR]: '#3a2a4a' };
+  [T.GATE]: '#8a6a3a', [T.STAIRS]: '#2a2a33', [T.ELEVATOR]: '#2a2a33', [T.ALTAR]: '#3a2a4a',
+  // shortcuts (DESIGN.md §3.6): barred = dim green, opened = mint (drawn below, plus a mint diamond so it still
+  // reads at 3 px/cell). Gates keep their brown.
+  [T.SHORTCUT]: '#2f8f6a' };
+const SHORTCUT_OPEN_COLOR = '#5ff0b0';
 const ITEM_COLOR = { oil: '#ffa030', relic: '#60e0ff', rich: '#c070ff', bundle: '#c8c8c8', quest: '#e0d0a0' };
 // drawMinimap(): the current map (zone: explored cells only; hub: everything) into #minimap.
 export function drawMinimap() {
@@ -778,6 +785,13 @@ export function drawMinimap() {
     for (const sp of m.spots || []) if (seen(sp.cx, sp.cz) && !targets.some(c => c.cell && c.cell[0] === sp.cx && c.cell[1] === sp.cz)) diamond(sp.x, sp.z, '#8a7a5a');
     for (const it of ctx.items) { const c = toCell(m, it.x, it.z); if (seen(c.cx, c.cz)) dot(it.x, it.z, ITEM_COLOR[it.kind] || '#fff'); }
     for (const l of ctx.lanterns) dot(l.x, l.z, '#ffc070', px * 0.45);
+    // an OPENED shortcut is drawn whether or not its cell is explored (you know it is there); a barred one only once seen
+    for (const s of ctx.zone.shortcuts || []) {
+      if (!s.open && !seen(s.cx, s.cz)) continue;
+      const c = s.open ? SHORTCUT_OPEN_COLOR : CELL_COLOR[T.SHORTCUT];
+      g.fillStyle = c; g.fillRect(ox + s.cx * px, oz + s.cz * px, px, px);
+      if (s.open) diamond(s.x, s.z, SHORTCUT_OPEN_COLOR, Math.max(1.5, px * 0.6));
+    }
     for (const n of ctx.npcs || []) if (n.where === 'zone' && n.x != null) { const c = toCell(m, n.x, n.z); if (n.state === 'FOLLOW' || seen(c.cx, c.cz)) dot(n.x, n.z, '#b8862a', px * 0.4); }
   }
   const p = ctx.player;

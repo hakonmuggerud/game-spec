@@ -333,7 +333,7 @@ function startRun() {
   // hunters that spawn deep start dormant and wake as the player closes in (hunter.js spawned them this event)
   for (const h of ctx.hunters) {
     if (!h.active) continue;
-    const c = toCell(m, h.x, h.z), lap = lapOf(c.cx, c.cz);
+    const c = toCell(m, h.x, h.z), lap = lapOf(c.cx, c.cz, m);
     const wakeLap = lap - ENDGAME.wakeLapAhead;
     if (wakeLap > 0) { h.active = false; if (h.group) h.group.visible = false; S.run.dormant.push({ h, wakeLap }); }
   }
@@ -409,7 +409,7 @@ function pickSpawnCell(lap) {
     const d = f.dist[i]; if (d < ENDGAME.spawnMinCells || d > ENDGAME.spawnMaxCells) continue;
     const cx = i % m.w, cz = (i / m.w) | 0, t = m.cells[i];
     if (t !== T.FLOOR && t !== T.DEEP) continue;
-    const l = lapOf(cx, cz); if (l !== lap && l !== lap + 1) continue;
+    const l = lapOf(cx, cz, m); if (l !== lap && l !== lap + 1) continue;
     cands.push({ cx, cz, d });
   }
   if (!cands.length) return null;

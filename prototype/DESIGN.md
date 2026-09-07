@@ -20,7 +20,7 @@ hub progress persists.
 | F | Toggle handlamp (off = stealth, burns nothing) |
 | Q | Flash: −flashCost oil, staggers a hunter in a cone ahead; each creature answers it its own way (§5) |
 | R | Plant lantern: −lanternCost oil, safe pool at your feet |
-| E | Interact, asked in order: endgame (altar / ride up) → npc → hub → items / gates / stairs |
+| E | Interact, asked in order: endgame (altar / ride up) → npc → hub → items → gates → shortcuts (§3.6) → stairs |
 | T | Pour one carried flask into the lamp (+25 oil) |
 | M · [ · ] | Mute · volume ±0.1 |
 | Tab | Minimap overlay (needs the Cartographer's Table) |
@@ -35,10 +35,13 @@ hub progress persists.
 - One zone at a time at the origin (`world.loadZone` disposes the previous one); the hub stays resident at x=+60.
 - Render at ⅓ resolution (`image-rendering: pixelated`), `MeshLambertMaterial`, per-instance colour jitter ±6%. One
   `InstancedMesh` per block type. Per-zone palette / fog / ambient in `maps.PALETTES` (Undercroft: fog exp2 0.11, ambient
-  0x0b0a14; the hub warms its ambient/fog per flame tier, §3 hub). All real light is point lights: lamp, planted lanterns, hub
+  0x0b0a14; the hub warms its ambient/fog per flame tier, §3.8). All real light is point lights: lamp, planted lanterns, hub
   flame, hub sconces, five hub lanterns.
 
-### Legend
+(§3.3–§3.7 were `DESIGN-maps.md`, the map spec for the enlarged zones and the shortcut mechanic; its §1 is §3.3 here,
+§2 → §3.4, §3 → §3.5, §4 → §3.6 and §5 → §3.7, which is what the `DESIGN.md §3.n` comments in `src/maps*` point at.)
+
+### 3.1 Legend
 
 | Char | Meaning |
 |---|---|
@@ -52,200 +55,603 @@ hub progress persists.
 | `N` | Captive NPC cell (`ZONES[id].npcs` names who) |
 | `C` | Contract spot (row-major index = `spot` in contracts) |
 | `W` | Water: walkable; player ×0.55 (sprint ×0.6), hunters ×0.85; wading is heard 7 u away without LOS |
-| `X` | Gate: solid until the zone's tool is owned; E opens it for good (`save.gatesOpened`) |
+| `X` | Gate: solid until the zone's tool is owned; E opens it from either side, for good (`save.gatesOpened[zoneId] = [toolId]`) |
+| `=` | Shortcut (§3.6): **barred** — solid and sight-blocking; needs no tool; E from the `openFrom` side ONLY lifts the bars for good (`save.shortcuts[zoneId] = [shortcutId]`). One or two adjacent cells per door, in a wall line |
 | `A` | The Source altar |
 | `F` / `0–9` | Hub great flame / hub building anchors (floor for the grid; the hub's `blockMask` adds footprints, props and residents) |
 
-### Zones (`maps.ZONES`; 40×40, row 0 = north, x = column, z = row)
+### 3.2 Zones (`maps.ZONES`; row 0 = north, x = column, z = row; one file per zone in `src/maps/`)
 
-| id | name | entry | burn | lamp | hunters | captives | gate (tool → opens) | requires |
+| id | name | grid | entry | walkable | burn | lamp | hunters | captives | gate (tool → opens) | requires |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `undercroft` | The Undercroft | 62×62 | S (31,58) | 2401 | ×1 | ×1 | 1 base (28,44) + Warden (42,10) E + Brute (5,42) leash 14 | Wick (4,47), Deacon (4,5) | Pry Bar → X (15,6), NW crypt | — |
+| `cistern` | The Cistern | 64×64 | S (32,60) | 2832 | ×1 | ×1 | 2 base (20,17) (30,40) + Drowner (31,29) + Lampwight (46,52) | Ines (60,52) | Sluice Key → X (16,6), flooded vault | building `tram` |
+| `ossuary` | The Ossuary | 62×62 | V (7,58) | 1407 | ×1.3 | ×0.85 | 1 fast (31,37) + Warden (19,9) N `gateOk` + false lights (22,22) (52,38) | Oren (5,7) | Censer → X (15,7), reliquary | building `elevator` + lightTech ≥ 2 |
+| `source` | The Source | 60×60 | V (2,2) | 2288 | bands | bands | 2 fast (7,20) (17,25) (+§9) + Brute (30,23) lap 4 + false light (41,26) lap 3 + Lampwight (13,30) lap 2 | — | — | flame tier 4 + Deacon rescued; no banking |
+
+Loot per full clear: Undercroft 10o+8r+3R = 49 · Cistern 7o+8r+4R = 51 · Ossuary 10o+11r+7R = 78 · Source 8o+3r+3R = 32.
+Items respawn each expedition. Contract spots: Undercroft (48,10) NE crypt, (31,47) great hall · Cistern (33,45) drowned hall,
+(5,53) pump room · Ossuary (50,21) east bone-pit, (30,49) south vault.
+
+Shortcuts (`=`, §3.6 — barred from the entrance side, lifted with `E` from `openFrom` only, permanent):
+
+| zone | shortcut | cells | opens from | links | detour removed | full-clear route: shut → all open |
+|---|---|---|---|---|---|---|
+| undercroft | `u_navedoor` The Nave Door | (37,55) (37,56) | E | Stair Head ↔ the nave's deep south apron | 74 | 952 → 640 cells |
+| undercroft | `u_wingstair` The Wing Stair | (7,36) | N | West Wing ↔ West Bay | 80 | |
+| undercroft | `u_rood` The Rood Door | (53,36) | N | Collapsed Nave ↔ East Bay | 152 | |
+| cistern | `c_bulkhead` The West Bulkhead | (25,52) (25,53) | W | Tram Landing ↔ Sunken Nave → the whole west half | 214 | 1002 → 678 cells |
+| cistern | `c_screen` The East Screen | (40,52) | E | Tram Landing ↔ Filter Beds → Ines, the sump | 144 | |
+| cistern | `c_sluice` The Sluice Screen | (12,45) | W | the quay ↔ West Channels | 92 | |
+| ossuary | `o_chute` The Lime Chute | (7,44) | N | the cage corridor ↔ the Lime Pits | 158 | 1082 → 638 cells |
+| ossuary | `o_stackdoor` The Stacks Door | (47,44) | N | the artery ↔ the Deep Stacks | 288 | |
+| ossuary | `o_rim` The Wheel Rim | (22,28) | N | the z29 corridor ↔ the Charnel Wheel | 92 | |
+| source | `s_fissure1` The First Fissure | (5,7) | E | lap 0 ↔ lap 1 | 354 | 1926 → 1086 cells |
+| source | `s_fissure2` The Second Fissure | (30,49) | N | lap 1 ↔ lap 2 | 152 | |
+| source | `s_fissure3` The Third Fissure | (30,15) | S | lap 2 ↔ lap 3 | 112 | |
+
+Each zone's named regions, deep pockets and per-region loot split are §3.4 (and `REGIONS` in `src/maps/<zone>.js`);
+`ZONES[id].anchors` is the cell contract every test suite reads instead of a literal (§3.7).
+
+#### The Undercroft — 62×62 (`src/maps/undercroft.js`)
+```
+    0         1         2         3         4         5         6 
+    01234567890123456789012345678901234567890123456789012345678901
+  0 ##############################################################
+  1 #DDDDDDDDDDDDDD#DDDDDDDDDDDDDDDDDDD#DDDDDDDDDDDDDDDDDDDDDDDDD#
+  2 #DD#DD#RD#DD#DD#DD#DD#DD#DD#DD#DD#D#DDDDD#DDD#DDD#DDD#DDD#DDD#
+  3 #DD#DD#DD#DD#DD#DD#DD#DD#DD#DD#DD#D#DoDDD#DDD#DDD#DDD#DDD#DDD#
+  4 #DDDDDDDDDDDDDD#DDDDDDDDDDDDDDDDDDD#DDDDD#DDD#DDD#DDD#DDD#DDD#
+  5 #DDDNDDDDDDDDDD#DDDDoDDDDDDDDDDDDDD#DDDDDDDDDDDDDDDDDDDDDDDDD#
+  6 #D#DD#DD#DD#DDDXDDD#DD#DD#DD#DD#DDDDDD####################DDD#
+  7 #DDDDDDDDDDDDDD#DDDDDDDDDDDDDDDDDDD#DDD#DDDD#DDDDDDD#DDD#DDDD#
+  8 #DDDDDDDDDDDDDD#DDDDDDDDDDDDDDDDDDD#DDD#DDDD#DDDDDDD#DDD#DDDD#
+  9 #DD#DD#DD#DD#DD#DD#DD#DD#DD#DD#DD#D#DDDDDDDDDDDDDDDDDDDDDDDDr#
+ 10 #Do#DD#DD#DD#DD#DD#DD#DD#DD#DD#rD#D#DDDDDDGDDDDDCDDDDDDDDDDDD#
+ 11 #DDDDDDDDDDDDDD#DDDDDDDDDDDDDDDDDDD#DDDDDDDDDDDDDDDDDDDDDDDDD#
+ 12 ###########################D######################D###########
+ 13 #####DDDDDDDD#####...................#.........P...P.........#
+ 14 ###DDDDDDDDDDDD###..P..P........P..P.#....P.............P....#
+ 15 ##DDDPDDDDDPDDDD##......#######......#.......#########.......#
+ 16 #DDDDDDDrDDDDDDDD#......#######...o..#....P#.#########..P..o.#
+ 17 #DDDDDDDDDDDDRDDD#......#######......#.....#.#########.......#
+ 18 ##DDDPDDDDDPDDDD##......#######......#....P#.#########..P....#
+ 19 ###DDDDDDDDDDDD###..P..P........P..P.#.....#.................#
+ 20 #####DDDDDDDD#####...................#.....#...P...P.........#
+ 21 #######D###################.#############.####################
+ 22 #..............#........#............P.#..........P......#...#
+ 23 #..P.......P...#........#......#######.#.................#...#
+ 24 #..............#..P.P...#.P.P.P#######.#...P###########.P#...#
+ 25 #########......#........#......#######.#....###########..#...#
+ 26 #..............#..P.....#......#######.#....###########..#.r.#
+ 27 #...P...P...P..#...............#######.#....###########..#...#
+ 28 #......................................#..P.###########......#
+ 29 #..............#.......................#....###########......#
+ 30 #...P...P...P..#......#................#....###########.....P#
+ 31 #..............#.####.#...P.P.P...P.P..#....###########......#
+ 32 #.....##########.####.#................#...P.................#
+ 33 #..............#.####.#................#..........P.....P....#
+ 34 #.rP.......P...#.####.#..............o.#.....................#
+ 35 #..............#......#................#.....................#
+ 36 #######=######################.######################=########
+ 37 #.....#..#....#.........####.....#####.....#.....###.........#
+ 38 #.r...#..#....#.o.......####.....#####...P.#P....###....P..o.#
+ 39 #..P..#..#..P.#.........####.....#####.....#.....###.........#
+ 40 #.....#..#....#......................#.......................#
+ 41 #.....#..#....#..P.P.P.P.P.P.P.P.P.P.##########.##############
+ 42 #....B........#......................#.......................#
+ 43 #######..#....#......................#...P...P.....P.....P...#
+ 44 #.....#..#..................H................................#
+ 45 #.....#..#....#......................#...P...P.....P.....P...#
+ 46 #........######......................######.###########.######
+ 47 #...N.#..#....#..P.P.P.P.P.P.P.C.P.P.#........#..............#
+ 48 #.....#.......#####..................#...#....#.....#..#.....#
+ 49 #######..#....#####..................#...#....#.....#..#.....#
+ 50 #######..#.o..#####.....r..........o.#...#....#.....#..#..r..#
+ 51 #######..#....#####..................#...#....#.....#..#.....#
+ 52 #######..#..P.################.##########################.####
+ 53 #######..#....###########............##############..........#
+ 54 #######..#....###########............#DDDDDDDDDDD............#
+ 55 #######..#....###########..P......P..=DDDDD#DD#DD...#........#
+ 56 #########################............=DDDRD#DD#DD...#........#
+ 57 #########################............#DDDDD#DD#DD...#........#
+ 58 #########################......S.....#########################
+ 59 #########################..P......P..#########################
+ 60 #########################............#########################
+ 61 ##############################################################
+```
+#### The Cistern — 64×64 (`src/maps/cistern.js`)
+```
+    0         1         2         3         4         5         6   
+    0123456789012345678901234567890123456789012345678901234567890123
+  0 ################################################################
+  1 #..............##WW#WW#WW#WW#WWWWW#WW#WW#WW#WWW#DDDD#DDDDDDDDDD#
+  2 #.r.####.##.##.##WW#PW#WW#PW#WWPWW#WP#WW#WW#PWW#DDDD#DDDDDDDDRD#
+  3 #...####.##.##.##WW#WW#WW#WW#WWRWW#WW#WW#WW#WWW#DDDD#DDDDDDDDDD#
+  4 #..............##WWWWW#WWWWW#WWWWW#WWWWW#WWWWWW#DDDD#DDDDD#DDDD#
+  5 ############...##..WWWWWWWWWWWWWWWWWWWWWWWWWWWW#DDDD#DDDDD#DDDD#
+  6 #..........##...X..WWWWWWWWWWWWWWWWWWWWWWWWWWWW#DDDD#DDDDD#DDDD#
+  7 #.P........##..##..WWWWWWWWWWWWWWWWWWWWWWWWWWWW#DDDDDDDDDD#DDDD#
+  8 #..##...##.....##WWWWW#WWWWW#WWWWW#WWWWW#WWWWWW#DDDDDDDDDD#DDDD#
+  9 #..##...##.....##WW#WW#WW#WW#WWWWW#WW#WR#WW#WWW#DoDDDDDDDD#DDDD#
+ 10 #.....##....o..##WW#WP#WW#PW#WWPWW#WP#WW#WW#PWW#DDDDDDDDDD#DDDD#
+ 11 #.....##.......##WW#WW#WW#WW#WWWWW#WW#WW#WW#WWW#DDDDDDDDDD#DDDD#
+ 12 ###.####################################################.#######
+ 13 #WW.#WW.#WW.#......................................#.WW#.WW#.WW#
+ 14 #WW..WW.#WW.#..#WWWW.WWWWWWWWWWWWWWWWWWWWWW.....W..#.WW..WW#.WW#
+ 15 #WW.#WW.#WW.#..#PWWW.WWWPWWWPWWWPWWWPWWWPWW.###.P..#.WW#.WW#.WW#
+ 16 #WW.#WW.#.###..#WWWW.WWWWWWWWWWWWWWWWWWWWWW.###....###.#.WW#.WW#
+ 17 #WW.#WW.#WW.#..#....H.......WWWWWWWWWWWWWWW.....W..#.WW#.WW#.WW#
+ 18 #WW.#WW.#WW.#..#WWWW.......WWWWWWWWWWWWWWWW.....W..#.WW#.WW#.WW#
+ 19 #WW.#WW.###.#..#W#WW..WWWW.WWWWWWWWWWWWWWWWWWWWWW..#.###.WW#.WW#
+ 20 #WW.#WW.#WW....#W#WW..WRWWWWWWWWWWWWWWWWWWWWW#WWW..#.WW#.WW#.WW#
+ 21 #WW.#WW.#WW.#..#W#WW..WWWWWWWWWWWWWWWWWWWWWWW#WWW..#.WW#.WW#.WW#
+ 22 #WW.#WW.#.###..#W#WW..WWWW.WWWWWWWWWWWWWWWWWW#WWW..###.#.WW#.WW#
+ 23 #WW.#WW.#WW.#..#W#WW.......WWWWWWWWWWWWWWWWWW#WWW..#.WW#.WW#.WW#
+ 24 #WW.#WWo#WW.#..#WWWW.WWWWWWWWWWWWWWWWWWWWWWWW#WWW..#.WW#oWW#.WW#
+ 25 #WW.#WW.###.#..#PWWWPWWWPWWWPWWWPWWWPWWWPWWWP#WWP..#.###.WW#.WW#
+ 26 #WW.#WW.#WW.#..#W#WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW#.WW#.WW#.WW#
+ 27 #WW.#WW.#WW.#..#W#WW.WWWWWWWWWWWWWWWWWWWWWWWWWWWWWW#.WW#.WW#.WW#
+ 28 #WW.#WW.#.###..#W#WW.WWWWWWWWWWWWWWWWWWWWWWWW#WWW..###.#.WW#.WW#
+ 29 #WW.#WW.#WW.#..#W#WW.WWWWWWWWWWwWWWWWWWWWWWWW#WWW..#.WW#.WW#.WW#
+ 30 #WW.#WW.#WW.#..#W#WW.WWWWWWWWWWWWWWWWWWWWWWWW#WWW..#.WW#.WW#.WW#
+ 31 #WW.#WW.###.#..#W#WW.WWWWWWWWWWWWWWWWWWWWWWWW#WWW..#.###.WW#.WW#
+ 32 #WW.#WW.#WW.#..#WWWW.WWWWWWWWWWWWWWWWWWWWWWWW#WWW..#.WW#.WW#.WW#
+ 33 #WWr#WW.#WW.#..#.............WWWWWW................#.WW#.WW#rWW#
+ 34 #WW.#WW.#.###..#WWWWWWWWWWWWWW..WWWWWWWWWWWWWWWWW..###.#.WW#.WW#
+ 35 #WW.#WW.#WW.#..#WWWWWWWWWWWWWW..WWW..........WWWW..#.WW#.WW#.WW#
+ 36 #WW.#WW.#WW.#..#WWWWWWWWWWWWWW..WWW..######..WWWW..#.WW#.WW#.WW#
+ 37 #WW.#WW.###.#..#PWWWPWWWPWWWPW..PWW..#....#..WWWP..#.###.WW#.WW#
+ 38 #WW.#WW.#WW.#..#WWWWWWWWWWWWWW..WWW..#....#..WWWW..#.WW#.WW#.WW#
+ 39 #WW.#WW.#WW.#..#WWWWWWWWWWWWWW..WWW..#....#..WWWW..#.WW#.WW#.WW#
+ 40 #WW.#WW.#.###..#WWWWWWWWWWWWWWH.WWW..##.###..WWWW..###.#.WW#.WW#
+ 41 #WW.#WW.#WW.#..#WWWWWWWWWWWWWW..WWW..........WWWW..#.WW#.WW#.WW#
+ 42 #WW.#WW.#WW.#..#WWWWWWWWWWWWWW..WWW..........WWWW..#.WW#.WW#.WW#
+ 43 #WW.#WW.###.#..#WWWWWWWWWWWWWW..WWWWWWWWWWWWWWWWW..#.###.WW#.WW#
+ 44 #WW.#WW..WW.####WWWWWWWWWWWWWW......WWWWWWWWWWWWW..#.WW#.WW..WW#
+ 45 #WW.#WW.#WW.=....................C...................WW#.WW#.WW#
+ 46 ###.#############################.##########################.###
+ 47 #............#WWW#WWW#WWW#..####..####..#.W#WW.WW#WWW##.#.#....#
+ 48 #.###..###.r.#WWW#.oW#WWW#..####..####..#rW#WW.WW#WWW##........#
+ 49 #.###..###.###WPW#WPW#WPW#..............#WW#WW.WW#WWW##.#.#....#
+ 50 #.###......###WWW#WWW#WWW#..............#WW#WW.WW#WWW##.########
+ 51 #............#WWWWWWWWWWW#..P..P..P..P..#WW#WW.WW#WWW##.###..#.#
+ 52 #.o...##......WPWWWPWWWPW=..............=.....L.............N..#
+ 53 #....C##.....#WWWWWWWWWWW=..............#WW#.W.WW#WWW##.###....#
+ 54 #............#WWWWWWWWWWW#...##....##...#WW#rW.WW#WWW##.###....#
+ 55 #.##....###..#WWW#WWW#WWW#...##....##...#WW#WW.WW#WWW##.########
+ 56 #.##....###..#WPW#WPW#WPW#..P..P..P..P..#WW#WW.WW#WW.##.#.#....#
+ 57 #.##.###.....#WWW#WWW#.rW#..............#WW#WW.WW#WWo##......r.#
+ 58 #....###.....#WWW#WWW#WWW#..............#WWWWWWWWWWWW####.#....#
+ 59 ###########################............#########################
+ 60 ###########################.....S......#########################
+ 61 ###########################..P......P..#########################
+ 62 ###########################............#########################
+ 63 ################################################################
+```
+#### The Ossuary — 62×62 (`src/maps/ossuary.js`)
+```
+    0         1         2         3         4         5         6 
+    01234567890123456789012345678901234567890123456789012345678901
+  0 ##############################################################
+  1 ##############################################################
+  2 ##DD#D#DD#D#DR##########DDDDDD##DDDDDD########################
+  3 ##DD#D#DD#D#DD##DDDDDD##DD#oDD##DDD#DD##DDD#DD#DD#DD#DD#DD#DD#
+  4 ##DD#D#DD#D#DD##DDDRDD##DD#DDD##DDD#DD##DoD#DD#DD#DD#DD#DD#DD#
+  5 ##DD#D#DD#D#DD##DDDDDD##DD#DDD##DDD#DD##DDD#DD#DD#DD#DD#DD#DD#
+  6 ##DDDDDDDDDDDD##DRDDDD##DDDDDD..DDDDDD..DDDDDDDDDDDDDDDDDDDDD#
+  7 ##DDDNDDDDDDDDDXDDDDDD##DD#DDD##DDD#DD##DDDDDDDDDDDDDDDDDDDDD#
+  8 ##DD#D#DD#D#DD##DDDDDD##DD#DDD##DDD#DD##DDD#DD#DD#DD#DD#DD#DD#
+  9 ##DD#D#DD#D#DD##DDDGDD##DD#DDD##DDr#DD##DDD#DD#DD#DR#DD#DD#DD#
+ 10 ##DD#D#DD#D#DD##DDDDDD##DD#DDD##DDD#DD##DDD#DD#DD#DD#DD#DD#Dr#
+ 11 ##Dr#D#DD#D#DD##DDDDDD###D###############################D####
+ 12 #####D######D############D###############################D####
+ 13 #.................#####................#DDDDoDDDDDDDDDDDDDDDD#
+ 14 ###.####.##.##.#.##.........##.##.#######D#################D##
+ 15 #.....#####.######..###.###..####...r..##D#################D##
+ 16 #.....#####.#####...###.###...########.##D#################D##
+ 17 #.o...#####.#####.#..##.##..#.###......##D#################D##
+ 18 #.....#####.#####.##..#.#..##.###.#######D####DDDDDD#######D##
+ 19 #.....#####.#####.###.DDD.###.###.r....##D####DDDDDD#######D##
+ 20 ######.#.##.#.###.....DDD.....########.##DDDDDDDDDDD#######D##
+ 21 #..............##.####DDD.###.###......##D####DDDDCD#######D##
+ 22 ###.##.#.##.#####.###.Y.#..##o###.#######D####DDDDDD#######D##
+ 23 ###.#####......##.##.r#.##..#.###......##D####DDDDDD#######D##
+ 24 ###.#####......##....##.###...########.##D########D##DDDDDDD##
+ 25 ###.#####......###..###.###..####......##D########D###########
+ 26 ###.#####....r.####.........#####.#######D########D##DDDDDD###
+ 27 ###.#####......#######.##########......##D########D##DDDrDD###
+ 28 ###.##.#.#######.#####=#######.#######.##D########D##DDDDDD###
+ 29 #......................................#DDDDDDDDDDDDDDDDDDD###
+ 30 ###D############....####.#####.###################D###########
+ 31 ##DDDDDDDDrDDD##.#####.....#....##########RDDDD#DDDDD#DD######
+ 32 ##D##########D##.#####.....#....##########DD#DDDDD#DDDDD######
+ 33 ##D##########D##.#####...o.#.r..##########D###D########D######
+ 34 ##D##########D##.....#.....#....##########DD#DD#DDDDD#DD######
+ 35 ##D##########D######.#.....#....##########DD#oDDDD#DDDDD######
+ 36 ##D##########D######.######################D####D#####D#######
+ 37 ##DDDDDDDDDDDD#................H.......###DD#DDDDD#DDDDD######
+ 38 ##D##########D##.#########################DDDDD#DDDrY#DD######
+ 39 ##D##########D##......................####D######D#####D######
+ 40 ##D##########D#######################.####DD#DDDDD#DDDDD######
+ 41 ##D##########R##......................####DDDDD#DDDDD#RD######
+ 42 ##D##########D##.##########################D#####D#####D######
+ 43 ##DDDoDDDDDDDD##......................####DDDDDDDDDDDDDD######
+ 44 #######=#############################.#########=##############
+ 45 #...........##...##..................................#########
+ 46 ###.###.###.##.#.##.####.######.######.#####.###.#...#########
+ 47 ###.###.###....#....######DDDDDDDDDDD#############...#########
+ 48 ###.###.##################DDDDDDDDoDD#########################
+ 49 ###.###.##################DDDDCDDDDDD#########################
+ 50 ###.###.##################DDDDDDDDDDD#########################
+ 51 ###.###.##################DDDDDDDDDDD#########################
+ 52 ###.###.##.###.###############################################
+ 53 #......................#######################################
+ 54 #######.############.#########################################
+ 55 ####.......#####.....#########################################
+ 56 ####.......#####.....#########################################
+ 57 ####.................#########################################
+ 58 ####...V...#####..o..#########################################
+ 59 ####.......#####.....#########################################
+ 60 ####.......###################################################
+ 61 ##############################################################
+```
+#### The Source — 60×60, five laps of gallery + back-spur + lap wall, altar chamber at the centre (`src/maps/source.js`)
+```
+    0         1         2         3         4         5         
+    012345678901234567890123456789012345678901234567890123456789
+  0 ############################################################
+  1 #..........................................................#
+  2 #.V........................................................#
+  3 #..........................................................#
+  4 #...######..##o#####..####..####..####o.####..##..##..##...#
+  5 #...####################################################...#
+  6 #...##DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD##...#
+  7 #....=DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD##...#
+  8 #...##DDD####################DDDDDDDDDDDDDDDDDDDDDDDDD##...#
+  9 ######DD#DDDDDDDDDDDDDDDDDDDD####DD###oD####DD###DDDDD##...#
+ 10 #....#DD#D##################D######################DDD##...#
+ 11 #..#.#DD#D#DDDDDDDDDDDDDDDDDD#DDDDDDDDDDDDDDDDDDD##DDD##...#
+ 12 #..#.#DD#D#DDDDDDDDDDDDDDDDDD#DDDDDDDDDDDDDDDDDDD##DDD#....#
+ 13 #..#.#DD#D#DDDDDDDDDDDDDDDDDD#D###############DDD##DDD#....#
+ 14 #..#.#DD#D#DDD####DD###DD###D#DDDDDDDDDDDDDDDD#DD#DDDD##...#
+ 15 #..#.#DD#D#DDD################=##############D#DD#DDDD##...#
+ 16 #..#.#DD#D#DDD##DDDDDDDDDDDDDDDDDDDDDDDDDDDD#D#DD##DDD##...#
+ 17 #..#.#DD#D#DDDD#DDDDDDDDDDDDDDDDDDDDDDDDDDDD#D#DD##DDD##...#
+ 18 #..#.#DD#D#DDDD#DDD############DDDDDDDDDDDDD#D#DD##DDD#....#
+ 19 #..#.#DD#D#DDD##DD#DDDDDDDDDDDD##D##D##D#DDD#D#DD##DDD##...#
+ 20 #..#.#DH#D#DDDD#DD#D##########D#########DDDD#D#DD#oDDD##...#
+ 21 #..#.#DD#D#rDDD#DD#D#DDDDDDDD#DDDDDDDDD##DDD#D#DD#DDDD##...#
+ 22 #..#.#DD#D#DDDD#DD#D#DDDDDDDD#DDDDDDDDD#DDDD#D#DD##DDD##...#
+ 23 #..#.#DD#D#DDD##DD#D#DDDDDDDD#BDDDDDDDD#DRDD#D#DD##DDD##...#
+ 24 #..#.#DD#D#DDD##DD#D#DDDDDRDD#DDDoDDDDD#DD#D#D#DD##DDD#....#
+ 25 #..#.#DD#D#D#DD#DH#D#DD#D###########DDD#DDDD#D#DD##DDD#....#
+ 26 #..#.#DD#D#DDoD#DD#D#DD#D#DDDDDDDD#DDDD#DYDD#D#DD#DDDD##...#
+ 27 #..#.#DD#D##DDD#DD#D#DD#D#DDDDDDDD#DDDD#DDDD#D#DD#DDDD##...#
+ 28 #..#.#DD#D#DDDD#DD#D#DD#D#DDDDDDDD##DDD#DDDD#D#DD##DDD##...#
+ 29 #..#.#DD#D#D#DD#DD#D#DD#D#DDDDDDDD##DDD#DDDD#D#DD##DDD##...#
+ 30 #..#.#DD#D#DDLD#DD#D#DD#DDDDDDADDD#DDDD#DD#D#D#DD##DDD#o...#
+ 31 #..#.#DD#D#DDDD#DD#D#DD#D#DDDDDDDD#DDDD#DDDD#D#DD##DDD##...#
+ 32 #..#.#DD#D##DDD#DD#D#DD#D#DDDDDoDD##DDD#DDDD#D#DD#DDDD##...#
+ 33 #..#.#DD#D#DDDD#DD#D#DD#D#DDDDDDDD#DDDD#DDDD#D#DD#DDDD##...#
+ 34 #..#.#DD#D#DRDD#DD#D#DD#D##########DDDD#DDDD#D#DD##DDD##...#
+ 35 #..#.#DD#D#DDDD#DD#D#DDD##DDD##DD#DDDDD#DD#D#D#DD##DDD##...#
+ 36 #..#.#DD#D#D#D##DD#D#DDDDDDDDDDDDDDDDDD#DDDD#D#DD##DDD#....#
+ 37 #..#.#DD#D#DDD##DD#D#DDDDDDDDDDDDDDDDDD#DDDD#D#DD##DDD#....#
+ 38 #..#.#DD#D#DDD##DD#D#DDDDDDDDDDDDDDDDDD##DDD#D#DD#DDDD##...#
+ 39 #..#.#DD#D#DDD##DD#D####################DDDD#D#DD#DDDD##...#
+ 40 #..#.#DD#D#DDDD#DD#DDDDDDDDDD##D#DD#D#D##DDD#D#DD##DDD##...#
+ 41 #..#.#DD#D#DDDD#DDD#########D#DDDDDDDDDDDDDD#D#DD##DDD##...#
+ 42 #..#.#DD#D#DDD##DDDDDDDDDDDDD#DDDDDDDDDDDDDD#D#DD##DDD#....#
+ 43 #..#.#DD#D#DDDD#DDDDDDDDDDDDD#DDDDDDDDDDDDDD#D#DD##DDD##...#
+ 44 #..#.#DD#D#DDDD###############D##############D#DD#DDDD##...#
+ 45 #..#.#DD#D#DDD##D###D####D##D#DDDDDDDDDDDDDDDD#DD#DDDD##...#
+ 46 #..#.#DD#D#DDDDDDDDDDDDDDDDDDD################DDD##DDD##...#
+ 47 #..#.#DD#D#DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD##DDD##...#
+ 48 #..#.#DD#D#DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD##DDD#....#
+ 49 #..#.#DD#D####################=####################DDD#....#
+ 50 #..#.#DD#DDDDDDDDDDDDDDDDDDDDDD###DD####rD####DD###DDD##...#
+ 51 #..#.#DDD#####################DDDDDDDDDDDDDDDDDDDDDDDD##...#
+ 52 #..#.#DDDDDDDDDDDDDDDDDDDDDDD#DDDDDDDDDDDDDDDDDDDDDDDD##...#
+ 53 #..#.#DDDDDDDDDDDDDDDDDDDDDDD#DDDDDDDDDDDDDDDDDDDDDDDD##...#
+ 54 #..#.#######################.###########################...#
+ 55 #..#.........................#####..####..####r.####.###...#
+ 56 #...#########################..............................#
+ 57 #..........................................................#
+ 58 #..........................................................#
+ 59 ############################################################
+```
+Source bands (`maps.lapOf(cx, cz, m)`, reading `m.bands` from `META.bands = {band: 5, maxLap: 5}`):
+`ring = min(x, z, w−1−x, h−1−z)`, `lap = min(5, floor((ring − 1) / 5))` — so at 60×60 each lap owns five rings: a 3-wide
+gallery (`5L+1…5L+3`), a 1-wide back spur (`5L+4`) fenced off from it, and the lap wall (`5L+5`). Every lap is therefore
+walked **twice**: the gallery is cut once, so you go the whole way round to a crossing that drops you into the spur, which
+runs back to the next lap's door. `D` cells burn ×(1.1 + 0.12·lap) and light ×(0.95 − 0.08·lap). Lap 0 is plain floor, the
+chamber (rings 26–29) is lap 5. Fog density ×(1 + 0.10·lap), ambient ×(1 − 0.13·lap) (min 0.25), eased at 2/s; a flavour
+line per lap. The three fissures each join lap L to lap L+1 only, so `player.lap` stays monotonic and every lap line,
+dormancy wake and lap-3/4 reinforcement still fires.
+
+### 3.3 Scale, cost and expedition length (measured — `__game.mapsApi.validateAll()`, `scratchpad/validate-maps.mjs`)
+
+Walkable = every non-`#`, non-`P` cell (`.` `D` `W` `S` `V` `X` `A` `=` and every marker cell). Each zone file declares
+`META.targets = {size, walkable, wallShare, route}`; `validateMap` fails outside a ±5 % walkable band and ±5 pts of the
+wall share, so these are contracts, not observations. "Route" is the greedy nearest-first full clear (entry → every item
+/ `N` / `C` → entry) with the tool gate **open** and every shortcut **shut**; the open column is the same walk with all
+three doors lifted, and check 8 requires it to be ≤ 70 % of the shut one.
+
+| zone | grid | cells | walkable (target) | walls (target) | pillars | water | route shut → open | eccentricity |
 |---|---|---|---|---|---|---|---|---|
-| `undercroft` | The Undercroft | S | ×1 | ×1 | 1 base + Warden (26,2) + Brute (4,17) | Wick (5,22), Deacon (2,3) | Pry Bar → X (4,5), NW crypt | — |
-| `cistern` | The Cistern | S | ×1 | ×1 | 2 base + Drowner (20,13) + Lampwight (30,27) | Ines (38,22) | Sluice Key → X (20,5), flooded vault | building `tram` |
-| `ossuary` | The Ossuary | V | ×1.3 | ×0.85 | 1 fast + Warden (12,6) + false lights (18,19) (26,25) | Oren (7,5) | Censer → X (14,4), reliquary | building `elevator` + lightTech ≥ 2 |
-| `source` | The Source | V | bands | bands | 2 fast (+§9) + Lampwight (7,20) + false light (29,14) + Brute (13,20) | — | — | flame tier 4 + Deacon rescued; no banking |
+| undercroft | 62×62 | 3844 | 2401 (2380) | 35.2 % (35.7) | 89 | — | **952 → 640** (67 %) | 144 |
+| cistern | 64×64 | 4096 | 2832 (2760) | 29.6 % (31.2) | 52 | 1588 (lake body 765) | **1002 → 678** (68 %) | 220 |
+| ossuary | 62×62 | 3844 | 1407 (1420) | 63.4 % (62.7) | 0 | — | **1082 → 638** (59 %) | 334 |
+| source | 60×60 | 3600 | 2288 (2300) | 36.4 % (36.1) | 0 | — | **1926 → 1086** (56 %) | 955 |
 
-Loot per full clear: Undercroft 6o+5r+2R = 31 · Cistern 4o+5r+2R = 29 · Ossuary 6o+7r+5R = 52 · Source 4o+2r+2R = 20.
-Items respawn each expedition. Contract spots: Undercroft (30,2) NE crypt, (16,29) great hall · Cistern (20,19) drowned hall,
-(3,26) pump room · Ossuary (29,18) east bone-pit, (19,28) south vault.
+Eccentricity = the deepest BFS cell from the entry with gates open and shortcuts shut; it is why `CFG.lowOil` is 35 and
+not 20 (20 oil buys 40 s ≈ 104 cells of lit walking, which no longer gets you back).
 
-#### The Undercroft
-```
-########################################
-#DDDDDDDD###############DDDDDDDDDDDDDDD#
-#DDDRDDDD###############DDDDDDCDDRDDDDD#
-#DNDDDDDD###############DDDoDDDDDDDDDDD#
-#DDDDDDDD###############DDDDDDDDDDDDDDD#
-####X#############################.#####
-#........#.............#...............#
-#........#..P...P...P..#.....P...P.....#
-#........#......H......#...............#
-#..r......................o............#
-#........#..P...P...P..#.....P...P.....#
-#........#......r......#...............#
-#........#.............#...............#
-#........#.............#...............#
-####.###########...#################.###
-#........#..............#..............#
-#..P.....#...P......P...#......P.......#
-#........#..............#........o.....#
-#........#..............#..............#
-#........#...P......P...#......P...r...#
-####.#####..............#..............#
-#.o......#..............#..............#
-#....N...#...P......P...#......P.......#
-#........#..............#..............#
-#........#..............######.#########
-#........#...P......P...#..............#
-#.........................o............#
-#........#..............#..............#
-#........#...P......P...#.........r....#
-#..r.....#......C.......#..............#
-#........#..............#..............#
-#........#..............#............o.#
-##################....##################
-###############..........###############
-###############.P......P.###############
-###############..........###############
-###############.P......P.###############
-###############....S.....###############
-###############..........###############
-########################################
-```
-#### The Cistern
-```
-########################################
-#......#WWWWWWWWWWWWWWWWWWWWWWWW#......#
-#..r...#WWWWWWWWWWWWWWWWWWWWWWWW#...r..#
-#......#WWWWWWWWWWWR.WWWWWWWWWWW#......#
-#......#WWWWWWWWWWW.RWWWWWWWWWWW#......#
-###.################X###############.###
-#WWWW.............................WWWW.#
-#WWoW.........H..P.....P..........WWWW.#
-#WWWW.........P...........P.......WWWW.#
-#.WWWW............WWWWWW.........WWWW..#
-#..WWWW.........WWWWWWWWWW...H..WWWW...#
-#..WWWW.........WWWWWWWWWW......WWWW...#
-#...WWWW..P...WWWWWWWWWWWWWW...PWWW....#
-#....WWWW.....WWWWWWWWWWWWWW..WWWW.....#
-#...WWWW......WWWWWWWWWWWWWW....WWW....#
-#..WWWW.........WWWWWWWWWW......WWWW...#
-#..WWWW.........WWWWWWWWWW......WWWW...#
-#.WWWW........P...WWWWWW..P......WWWW..#
-#WWWW.............................WWWW.#
-#WWWW...............C.............WWWW.#
-#WWWW.WWWWWWWWWWWWWWWWWWWWWWWW....WWWW.#
-####..###WWWWWWWWWWWWWWWWWWWW#.....#####
-#....#..........WWWWWWWWWW.........#..N#
-#.r..#..........WWWWWWWWWW.........#..o#
-#....#.....P......WWWWWW....P..........#
-#..................................#...#
-#..C.#......WWWW........WWWW.......##.##
-#....#......WWWW........WWWW.......#...#
-#....#......WWWW.....r..WWWW.......#...#
-#....#.P....WWWW........WWWW....P..#...#
-#.o..#......................r......#...#
-#....#.............................#.o.#
-##################....##################
-###############..........###############
-###############.P..WW..P.###############
-###############....WW....###############
-###############.P......P.###############
-###############....S.....###############
-###############..........###############
-########################################
-```
-#### The Ossuary
-```
-########################################
-########################################
-##DDDDDDDD#DDD#DDDDDDDDD######DDDDDDDD##
-##DRDDDDDD#DRD#DDDDDDDDD######DDDDDRDD##
-##DDDDDDDD#DDDXDDDDDrDDD######DDDDDDDD##
-##DDDDDNDD#DRD#DDDDHDDDD######DDDDDDDD##
-##DDDDDDDD#DDD#DDDDDDDDD######DDDDDDDD##
-##DDDDDDDD#####DDDDDDDDD######DDDDDDDD##
-##DDDDDDDD#####DDDDDDDDD######DDDDDDDD##
-#####.#############.#############.######
-#####.#############.#############.######
-#####.#############.#############.######
-#......................................#
-#.DDDDDD.#..##########.#..###.DDDDDD.###
-#.DDDDDD.#r.##########.#r.###.DDDDDD.###
-#.DDDDDD.#############.######.DDRoDD.###
-#.DDDDDD.#############.######.DDDDDD.###
-#.DDDDDD.#############.######.DDDDDD.###
-#.....................P......C.........#
-#.##..##.########..###.######.#..###.###
-#.##o.##.########r.###.######.#r.###.###
-#.######.#############.######.######.###
-#.######.#############.######.######.###
-#.######.#############.######.######.###
-#.......P..............................#
-#...####.##..##.DDDDDD.##..##.######...#
-#.r.####.##o.##.DDDDDD.##o.##.######.r.#
-#.######.######.DDDDDD.######.######.###
-#.######.######.DDDCDD.######.######.###
-#.######.######.DDDDDD.######.######.###
-#......................................#
-###..##########.#..##########.#######..#
-###..##########.#..##########.#######o.#
-###############.#############.##########
-###############.#############.##########
-######.....####.#############.##########
-######..o.......#############.##########
-######.V...#############################
-######.....#############################
-########################################
-```
-#### The Source (clockwise spiral, one door per lap at the top-left, altar chamber at the centre)
-```
-########################################
-#V.....................................#
-#.....................................o#
-#####################################..#
-#..DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD#..#
-#..DoDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD#..#
-#..###############################DD#..#
-#..#DDDDDDDDDDDDDDDDDDDDDDDDDDDDD#DD#..#
-#..#DDDoDDDDDDDDDDDDDDDDDDDDDDDDD#DD#..#
-#..#DD#########################DD#DD#..#
-#..#DD#DDDDDDDDDDDDDDDDDDDDDDD#DD#DD#..#
-#..#DD#DDDDDDDDDDDDDDDDDDDDDDD#DD#DD#..#
-#..#DD#DD###################RD#DD#DD#..#
-#..#DD#DD#DDDDDDDDDDDDDDDDD#DD#DD#DD#..#
-#..#DD#DD#DDDDDDDDDDDDDDDDD#DD#DD#DD#..#
-#..#DD#DD#DD#############DD#DD#DD#DD#..#
-#..#DD#DD#DD#DDDDDDDDDDD#DD#DD#DD#DD#..#
-#..#DD#DD#DD#DDDDDDDDDDD#DD#DD#DD#DD#..#
-#..#DD#DD#DD#DD#DDDDDDDD#DD#DD#DD#DD#..#
-#..#DD#DD#DD#DD#DDDADDDD#DD#DD#DD#DD#..#
-#..#DD#DD#DD#DD#DDDDDDDD#DD#DD#DD#DD#..#
-#..#DD#DD#DD#DD#DDDDDDDD#DD#DD#DD#DD#..#
-#..#DD#DD#DD#DD#DDDDDDDD#DD#DD#DD#DD#..#
-#..#DD#DD#DD#DD#DDDDDDDD#DD#DD#DD#DD#..#
-#..#DD#DD#DD#DD##########DD#DD#DD#DD#..#
-#..#DD#DD#DD#DDDDDDDDDDDDDD#DD#DD#DD#..#
-#..#DD#DD#DH#DDDDDDDDDDDDDD#DD#DD#DD#..#
-#..#DD#DD#DD################DD#DD#DD#..#
-#..#DD#DD#DDDDDDDDDDDDDDDDDDDD#DD#DD#..#
-#..#DD#DD#oDDDDDDDDDDDDDDDDDDD#DD#DD#..#
-#..#DD#DD######################DD#DD#H.#
-#..#DD#DDDDDDDDDDDDDDDDDDDDDDDDDR#DD#..#
-#..#DD#DDDDDDDDDDDDDDDDDDDDDDDDDD#DD#..#
-#..#DD############################DD#..#
-#..#DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD#..#
-#..#DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDr#..#
-#..##################################..#
-#......................................#
-#...................r..................#
-########################################
-```
-Source bands: `lap = min(5, floor((min(x, z, 39−x, 39−z) − 1) / 3))`; `D` cells burn ×(1.1 + 0.12·lap) and light ×(0.95 −
-0.08·lap). Lap 0 is plain floor, the chamber is lap 5. Fog density ×(1 + 0.10·lap), ambient ×(1 − 0.13·lap) (min 0.25),
-eased at 2/s; a flavour line per lap.
+**Expedition length and oil** (`scratchpad/oil-model.mjs` — the route walked cell by cell, deep and water cells costed
+exactly, at the light-tech/tier a player realistically holds in that zone). "Walk" is movement alone at walk 2.6, before
+the 30 s and 45 s contract vigils, an escort at follower pace, or a death. `greedy` = lit the whole way, `careful` = lit
+20 % of it; budget = start oil + 25 per flask on the route.
 
-### Hub — "The Last Lantern" (25×13 at x=+60; digits = building anchors)
+| zone | walk shut → open | deep / water cells on the route | start oil | flasks | greedy need vs budget | careful need |
+|---|---|---|---|---|---|---|
+| undercroft (tech 0, tier 1) | 6.1 → 4.1 min | 274 / 0 | 45 | 10 | 209 vs 295 | 42 |
+| cistern (tech I, tier 2) | 7.9 → 5.4 min | 45 / 280 | 50 | 7 | 217 vs 225 | 43 |
+| ossuary (tech II, tier 3) | 6.9 → 4.1 min | 400 / 0 | 55 | 10 | 256 vs 305 | 51 |
+| source (tech III, tier 4) | 12.3 → 7.0 min | 1343 / 0 | 60 | 8 | **321 vs 260 — does not finish** | 64 |
+
+That last row is deliberate: the Source is the one zone a lit-the-whole-way full clear cannot afford, and its fissures
+are the difference (open, the same clear needs 188 of 260). The balance autopilot's measured walking pace with pathing
+and turning is 0.8–1.7 cells/s rather than 2.6, so a real first descent runs 2–3× those minutes.
+
+**Payout per full clear** (unchanged building costs, so ~1.6× the old payout across a ~3× longer route):
+Undercroft 10o+8r+3R = 49 pts · Cistern 7o+8r+4R = 51 · Ossuary 10o+11r+7R = 78 · Source 8o+3r+3R = 32 (unbankable).
+
+**Render and CPU cost** (`scratchpad/rendercost2.mjs`, `bfsbench.mjs`, headless swiftshader at 426×240). Draw calls do
+not grow with the map: one `InstancedMesh` per block kind (`blocks:floor|deep|water|wall|pillar|ceil`), 4–6 per zone
+inside a 15–113-call frame (the spread is items, creature groups, the hub group and the water sheet, not the grid).
+Instances = `cells + nonWall + pillars`, 12 triangles each.
+
+| zone | block instances | scene triangles | `loadZone` | `bfsField` per repath |
+|---|---|---|---|---|
+| undercroft | 6423 | 79.4k | 30.5 ms | 0.44 ms / 38 KB |
+| cistern | 7032 | 92.0k | 29.5 ms | 0.27 ms / 41 KB |
+| ossuary | 5251 | 65.8k | 25.6 ms | 0.18 ms / 38 KB |
+| source | 5888 | 70.8k | 14.0 ms | 0.26 ms / 36 KB |
+
+The build happens once, inside the descend fade. `bfsField` allocates `10 × w·h` bytes per repath: 7 creatures ×
+3.3 repaths/s ≈ 0.9 MB/s of garbage and ~1 % of a core. Lights do not scale with the map (lamp + ≤ 4 lanterns + the
+parked hub set). The explored bitset grows to 450–512 B per zone (one bit per cell, ~684 base64 chars at 64×64; the whole save stays under 4 KB), and
+the minimap's `px = max(2, min(5, …))` drops to **3 px/cell** at 60–64 wide, which is why every marker has to read at
+3 px (§8).
+
+### 3.4 Regions
+
+`REGIONS` in each zone file is the authoring partition: inclusive `x`/`z` extents that never overlap and cover every
+non-solid cell exactly once (`validateMap` check 7 — an unassigned cell warns, an overlap is an error), `deep: true`
+where the pocket must really shrink the lamp (≥ 60 % `D`, ≥ 1 non-solid entrance, every interior cell satisfying
+`deepNeighbourhood`), and a `loot` split that must equal the `o` / `r` / `R` chars inside the extent. Creature and
+hunter counts are frozen (3 / 4 / 4 / 5 records; `enemies-test.mjs` asserts them), so pressure comes from siting each
+one on a must-visit region — never from adding more.
+
+**The Undercroft** — 62×62, bands of rows, each wall row carrying that band's doors: z1–11 north crypts (all deep) ·
+z12 wall, two doors only, (27,12) and (50,12) · z13–20 Chapter House / Lantern Well / East Cloister · z21 wall ·
+z22–35 the three bays, walls at x15 / x39 (only (15,28) is still a door: the x39 arcade has fallen, which is what makes
+the Rood Door worth 152 cells) · z36 wall · z37–51 wing, Great Hall, Collapsed Nave · z52 wall · z53–60 the south.
+One long axis runs the whole map: row z44 from the wing vestibule (x10) through the hall and the length of the nave to
+x60 — the processional aisle and the zone's only long sightline.
+
+| region | id | x | z | deep | loot (o / r / R) |
+|---|---|---|---|---|---|
+| The North-West Crypt | `u_nwcrypt` | 0–15 | 0–12 | deep | 1 / 0 / 1 |
+| The Middle Crypt | `u_midcrypt` | 16–35 | 0–12 | deep | 1 / 1 / 0 |
+| The North-East Crypt | `u_necrypt` | 36–61 | 0–12 | deep | 1 / 1 / 0 |
+| The Chapter House | `u_chapter` | 0–17 | 13–21 | deep | 0 / 1 / 1 |
+| The Lantern Well | `u_well` | 18–37 | 13–21 | — | 1 / 0 / 0 |
+| The East Cloister | `u_cloister` | 38–61 | 13–21 | — | 1 / 0 / 0 |
+| The West Bay | `u_bayw` | 0–15 | 22–35 | — | 0 / 1 / 0 |
+| The Central Bay | `u_bayc` | 16–39 | 22–35 | — | 1 / 0 / 0 |
+| The East Bay | `u_baye` | 40–61 | 22–35 | — | 0 / 1 / 0 |
+| The West Wing | `u_wing` | 0–14 | 36–61 | — | 1 / 1 / 0 |
+| The Great Hall | `u_hall` | 15–37 | 36–52 | — | 2 / 1 / 0 |
+| The Stair Head | `u_stair` | 15–37 | 53–61 | — | — |
+| The Collapsed Nave | `u_nave` | 38–61 | 36–61 | — | 1 / 1 / 1 |
+
+**The Cistern** — 64×64. z1–11 north (inlet gallery · flooded vault · drain sump) · z12 wall · z13–45 the lake flanked
+by the west and east channels · z45 the south quay (the artery) · z46 wall · z47–58 south rooms · z59–62 the tram apron.
+The lake is **one** water body of 765 cells (the Drowner's); every other flood — the vault, the channels, the Sunken
+Nave, each filter bed — is sealed off from it. A dry causeway ring runs off the quay's east end with three deliberate
+wades in it (x49–50 at z26–27, x20 at z25–26, x29–34 at z33): wade (slow, heard 7 u, the Drowner's water) or walk the
+long dry way round. The west half hangs off one door, the causeway head (12,20); the east half off (51,45).
+
+| region | id | x | z | deep | loot (o / r / R) |
+|---|---|---|---|---|---|
+| The Sluice Head | `c_head` | 1–16 | 1–11 | — | 1 / 1 / 0 |
+| The Flooded Vault | `c_vault` | 17–46 | 1–11 | — | 0 / 0 / 2 |
+| The Drain Sump | `c_sump` | 47–62 | 1–11 | deep | 1 / 0 / 1 |
+| The West Channels | `c_west` | 1–12 | 12–45 | — | 1 / 1 / 0 |
+| The Drowned Hall | `c_lake` | 13–50 | 12–45 | — | 0 / 0 / 1 |
+| The East Channels | `c_east` | 51–62 | 12–45 | — | 1 / 1 / 0 |
+| The Pump Room | `c_pump` | 1–13 | 46–58 | — | 1 / 1 / 0 |
+| The Sunken Nave | `c_nave` | 14–25 | 46–58 | — | 1 / 1 / 0 |
+| The Tram Landing | `c_land` | 26–40 | 46–62 | — | — |
+| The Filter Beds | `c_beds` | 41–53 | 46–58 | — | 1 / 2 / 0 |
+| Ines' Cell Block | `c_cells` | 54–62 | 46–58 | — | 0 / 1 / 0 |
+
+**The Ossuary** — 62×62, 63 % wall. Every corridor is one cell wide; junctions come every few steps and each band hangs
+off a single choke. z1–12 the four north galleries, all deep (lamp ×0.6 on top of the zone's ×0.85 and burn ×1.3 — the
+north is the expensive half) · z13 the north corridor, cut in two by a bone fall at x18–22 · z14–28 West Ossuary,
+Charnel Wheel, the Spine's seven-leg switchback (x33–38), East Bone-Pit · z29 the middle corridor (Lime Pits' door
+(3,30), the Winding Stair (19,30), the Wheel Rim's bars) · z30–44 Lime Pits, Nave of Bones, Deep Stacks, the Bone Stair ·
+z45 the south artery, dog-legged twice, carrying both other barred doors · z46–61 South Vault and Cage Vestibule.
+
+| region | id | x | z | deep | loot (o / r / R) |
+|---|---|---|---|---|---|
+| The West Gallery | `o_wgal` | 1–14 | 1–12 | deep | 0 / 1 / 1 |
+| The Reliquary | `o_relic` | 15–22 | 1–12 | deep | 0 / 0 / 2 |
+| The Central Gallery | `o_cgal` | 23–38 | 1–12 | — | 1 / 1 / 0 |
+| The East Gallery | `o_egal` | 39–61 | 1–12 | deep | 1 / 1 / 1 |
+| The West Ossuary | `o_west` | 1–14 | 13–29 | — | 1 / 1 / 0 |
+| The Charnel Wheel | `o_wheel` | 15–31 | 13–27 | — | 1 / 1 / 0 |
+| The Spine | `o_spine` | 32–39 | 13–44 | — | 0 / 2 / 0 |
+| The East Bone-Pit | `o_pit` | 40–61 | 13–29 | deep | 1 / 1 / 0 |
+| The Nave of Bones | `o_nave` | 15–31 | 28–44 | — | 1 / 1 / 0 |
+| The Lime Pits | `o_lime` | 1–14 | 30–44 | deep | 1 / 1 / 1 |
+| The Deep Stacks | `o_stacks` | 40–61 | 30–44 | deep | 1 / 1 / 2 |
+| The Cage Vestibule | `o_cage` | 1–22 | 45–61 | — | 1 / 0 / 0 |
+| The South Vault | `o_vault` | 23–61 | 45–61 | — | 1 / 0 / 0 |
+
+**The Source** — 60×60, band 5. The spiral is annular, so each lap is tiled by its legs (gallery, the leg that widens
+into that lap's hall, the south leg and the spur), and every ring from 6 outward is deep. Each lap is walked twice: the
+gallery ring is cut once, so from the lap door you go the whole way round to a crossing that drops you into the 1-wide
+spur behind it, and the spur runs back to the next lap's door.
+
+| lap | break (gallery cut) | crossing → spur | spur end → door → next entry | hall / guard |
+|---|---|---|---|---|
+| 0 | (1–3, 9) W | (3,10) → (4,10) | (28,55) → (28,54) → (28,53) | reliquary niches; `V` (2,2) |
+| 1 | (29, 51–53) S | (30,51) → (30,50) | (28,9) → (28,10) → (28,11) | The Ash Pits; fast `H` (7,20) |
+| 2 | (29, 11–13) N | (30,13) → (30,14) | (30,45) → (30,44) → (30,43) | The Choir of Stones, `L` (13,30) |
+| 3 | (29, 41–43) S | (28,41) → (28,40) | (30,19) → (30,20) → (30,21) | The Weeping Wall, `Y` (41,26) |
+| 4 | (29, 21–24) N | the Antechamber itself | (24,30) → (25,30) → (26,30) | The Antechamber, `B` (30,23) |
+| 5 | — | — | — | the 8×8 chamber, `A` (30,30) |
+
+| region | id | x | z | deep | loot (o / r / R) |
+|---|---|---|---|---|---|
+| The Outer Walk | `s_outer` | 1–58 | 1–5 | — | 2 / 0 / 0 |
+| The Eastern Arm | `s_eastwalk` | 54–58 | 6–53 | — | 1 / 0 / 0 |
+| The Processional Arm | `s_procession` | 1–58 | 54–58 | — | 0 / 1 / 0 |
+| The First Crack | `s_firstcrack` | 1–5 | 6–53 | — | — |
+| The First Turn | `s_turn` | 6–53 | 6–10 | deep | 1 / 0 / 0 |
+| The First Turn, East Leg | `s_turneast` | 49–53 | 11–48 | deep | 1 / 0 / 0 |
+| The Ash Pits | `s_ashpits` | 6–53 | 49–53 | deep | 0 / 1 / 0 |
+| The First Turn, West Leg | `s_turnwest` | 6–10 | 11–48 | deep | — |
+| The Second Turn | `s_second` | 11–48 | 11–15 | deep | — |
+| The Broken Lecterns | `s_lecterns` | 44–48 | 16–43 | deep | — |
+| The Second Turn, South Leg | `s_secondsouth` | 11–48 | 44–48 | deep | — |
+| The Choir of Stones | `s_choir` | 11–15 | 16–43 | deep | 1 / 1 / 1 |
+| The Third Turn | `s_third` | 16–43 | 16–20 | deep | — |
+| The Weeping Wall | `s_weep` | 39–43 | 21–38 | deep | 0 / 0 / 1 |
+| The Third Turn, South Leg | `s_thirdsouth` | 16–43 | 39–43 | deep | — |
+| The Third Turn, West Leg | `s_thirdwest` | 16–20 | 21–38 | deep | — |
+| The Antechamber | `s_ante` | 21–38 | 21–25 | deep | 1 / 0 / 1 |
+| The Fourth Turn, East Leg | `s_anteeast` | 34–38 | 26–33 | deep | — |
+| The Fourth Turn, South Leg | `s_antesouth` | 21–38 | 34–38 | deep | — |
+| The Chamber Approach | `s_approach` | 21–25 | 26–33 | deep | — |
+| The Chamber of the Source | `s_chamber` | 26–33 | 26–33 | deep | 1 / 0 / 0 |
+
+### 3.5 What moved when the maps grew
+
+The zones were 40×40 (walkable 1019 / 1152 / 604 / 1024, routes 220–816 cells). Nothing was dropped and no feature
+changed meaning: every entry, spawn, gate, captive and contract spot moved outward into the new grid, and the two or
+three new regions per zone (the Chapter House and the Collapsed Nave, the Drain Sump and the Sunken Nave, the Charnel
+Wheel and the Deep Stacks, the Choir and the Antechamber) were built around them. The suites follow each cell through
+`ANCHORS` (§3.7) rather than literals. Row-major order decides which `H` / creature record gets which options from
+`META`, so these cells are load-bearing, not decorative.
+
+| feature | 40×40 | now | why there |
+|---|---|---|---|
+| Undercroft entry `S` | (20,37) | **(31,58)** | the Stair Head, 5×5 clear, three free 4-neighbours |
+| Undercroft base `H` | (16,8) | **(28,44)** | the Great Hall on the processional aisle: the first hunter, on the main route |
+| Warden `G` facing E | (26,2) | **(42,10)** | the NE crypt: spot 0 (48,10) at 6 u and the cloister door (50,12) at 8.25 u both on its axis — inside the 9 u cone, outside the 8 u territory |
+| Brute `B` leash 14 | (4,17) | **(5,42)** | the wing spine: leash covers Wick at 10 and the wing doors at 7/11, never the hall centre (23) or `S` (42) |
+| Wick `N` | (5,22) | **(4,47)** | the West Wing, past the Brute |
+| Deacon Maud `N` | (2,3) | **(4,5)** | the NW crypt, behind the Pry Bar |
+| Pry Bar `X` | (4,5) | **(15,6)** | the wall column x15, NW ↔ Middle crypt |
+| Undercroft spots 0 / 1 | (30,2) (16,29) | **(48,10)** (31,47) | the NE crypt (83–89 BFS out) · the Great Hall |
+| Cistern entry `S` | (20,37) | **(32,60)** | the tram apron |
+| Cistern base `H` ×2 | (14,7) (29,10) | **(20,17)** (30,40) | causeway floor inside the lake band, 24 and 57 BFS from the entry |
+| Drowner `w` | (20,13) | **(31,29)** | the lake body (765 cells): its flood-fill reaches the quay shore and nothing else |
+| Lampwight `L` | (30,27) | **(46,52)** | the filter-bed walkway, 14 cells of open LOS toward Ines: the run to her is an oil tax, not a death trap |
+| Ines `N` | (38,22) | **(60,52)** | the east cell block |
+| Sluice Key `X` | (20,5) | **(16,6)** | the wall column x16, head ↔ vault |
+| Cistern spots 0 / 1 | (20,19) (3,26) | **(33,45)** (5,53) | the quay is 2 cells deep there, so the 30 s vigil cell is never water-adjacent while one step north is · the pump room |
+| Ossuary entry `V` | (7,36) | **(7,58)** | the elevator cage |
+| Ossuary fast `H` | (19,5) | **(31,37)** | the Spine's z37 crossing: the map's single choke, on every route |
+| Warden `G` facing N (`gateOk`) | (12,6) | **(19,9)** | the Reliquary, behind the Censer on purpose; both `R` and the gate cell inside its cone |
+| False lights `Y` ×2 | (18,19) (26,25) | **(22,22)** (52,38) | a Charnel Wheel spoke and a Deep Stacks cell, each 1 cell from a relic and seen from a corridor at 5.1 u |
+| Oren `N` / Censer `X` | (7,5) (14,4) | **(5,7)** (15,7) | the West Gallery cross aisle · the wall column x15 |
+| Ossuary spots 0 / 1 | (29,18) (19,28) | **(50,21)** (30,49) | the east bone-pit ledge · the deep south vault (45 s lamp-off vigil) |
+| Source entry `V` | (1,1) | **(2,2)** | a corner cell cannot hold the 5×5 entry pocket |
+| Source altar `A` | (19,20) | **(30,30)** | `lapOf` = 5 |
+| Source fast `H` ×2 | (11,26) (37,30) | **(7,20)** (17,25) | lap 1 (awake from the first step) and lap 3 (dormant until lap 2) |
+| Source `L` / `Y` / `B` | (7,20) (29,14) (13,20) | **(13,30)** (41,26) (30,23) | lap 2 Choir · lap 3 Weeping Wall · lap 4 Antechamber (dormancy wakes each at lap − 1) |
+
+### 3.6 Shortcuts (`=`) — the mechanic
+
+A shortcut is **one barred door** (one cell, or two adjacent where the doorway is 2 wide) set in a wall line between two
+regions that are far apart on foot. It is not a tunnel: it adds no corridor, it removes a detour. Distinct from `X`: a
+gate needs a tool and opens from either side, a shortcut needs nothing and opens from **one** side only — the far side.
+
+- **Data.** `parseMap` sets the cell to `T.SHORTCUT` (`T_NAME[9] = 'shortcut'`) and pushes
+  `map.shortcuts = [{cx, cz, idx, x, z, open, mesh, id}]` row-major; `world.loadZone` binds each parsed cell to the
+  `SHORTCUTS` entry that lists it and copies its `id`. `isSolid` and `los` both treat a barred cell as solid, so the
+  player, hunters, the follower's BFS and every sense check agree with no new rule in `hunter.js`.
+- **Interaction.** `main.interactTarget()` runs endgame → npc → hub → items → gates → **shortcuts** → stairs;
+  `shortcutTarget()` mirrors `gateTarget()` (within `CFG.interactR + 0.5`, facing it). From the `openFrom` side the hint
+  is `[E] Lift the bars` → `world.openShortcut()` rewrites every cell of the group to `T.FLOOR`, swaps the barred mesh
+  for the raised one, records the id in `save.shortcuts[zone]` and emits **`shortcutOpened {zoneId, id, name, cx, cz,
+  idx}`** (toast "The bars fall. <name> is open for good."). From the barred side the hint is `Barred from the other
+  side` and `E` only emits `uiError`. `hunter.js` drops its cached paths on `shortcutOpened` exactly as on `gateOpened`;
+  `audio.js` answers with the gate cue pitched down plus a chain rattle and a stone boom.
+- **Rendering.** `models.shortcutBarred()` is a portcullis — stone lintel, heavy iron bars, a chain drum, and a brass
+  lift-bar with a small emissive amber glint **on the far side only**, so the side that can open it is readable through
+  the bars; `models.shortcutOpen()` is the same frame with the bars raised into the lintel (walkable underneath), so you
+  can always see which doors you have opened. On the minimap a barred one is dim green `#2f8f6a`, an opened one mint
+  `#5ff0b0` plus a 1-px mint diamond (readable at 3 px/cell); an opened one draws whether or not its cell is in the
+  explored bitset, because you know it is there. Gates stay brown `#8a6a3a`.
+- **Persistence.** `save.shortcuts = {zoneId: [id]}` — stable string ids, never cell indices, because the grids changed
+  size (§11). Opening one is permanent: it survives death, re-entry and reload.
+- **Design rules** (`validateMap` check 5): ids unique and matching the map's `=` cells exactly; cells contiguous and
+  ≤ 2; the `openFrom` flank is the *farther* one from the entry; the removed detour ≥ 40 cells (Source fissures ≥ 100);
+  the barred flank reachable and with LOS to the `=` cell, so the promise is seen. Check 3 walks the zone with every
+  shortcut shut: nothing in a zone may *need* one. No shortcut bypasses a guard — `u_rood` still walks you under the
+  Warden's cloister door, `c_screen` runs through the Lampwight's tanks, `o_stackdoor` opens inside a false light's
+  honeycomb, and each fissure drops you onto the ring its creature patrols. In the Source a fissure joins lap **L to
+  L+1 only**, so `player.lap` stays monotonic. The per-door table is in §3.2.
+
+### 3.7 Map files, `ANCHORS` and validation
+
+One file per zone under `src/maps/`, each exporting exactly `ID SIZE ROWS REGIONS SHORTCUTS ANCHORS META`:
+
+```js
+export const ID    = 'undercroft';            // matches the filename and ZONE_ORDER
+export const SIZE  = 62;                      // square; ROWS.length === SIZE, every row .length === SIZE
+export const ROWS  = [ /* SIZE strings */ ];
+export const REGIONS   = [{ id, name, x: [x0, x1], z: [z0, z1], deep?, loot?: {oil, relic, rich} }, …];
+export const SHORTCUTS = [{ id, name, cells: [[cx, cz], …], openFrom: 'N'|'E'|'S'|'W', from, to, saves }];
+export const ANCHORS   = { entry, gate, spot0, spot1, hunter, warden, brute, …, shortcuts: {id: [cx, cz], …} };
+export const META  = { name, entry, exit, burnMul, lampMul, deepStyle, hunters, creatures, npc, npcs, gate, spots,
+                       loot, points, size: SIZE, regions, shortcuts, anchors, bands?, targets };
+```
+
+`maps.js` keeps everything that is not map-shaped (`PALETTES`, `TUNING`, `requires`/`lockReason`, `intro`/`threat`,
+`ambience`, `hunterSpeeds`) and composes `ZONES[id] = {id, ...TUNING[id], ...FILE.META, rows: FILE.ROWS}`; the hub rows
+stay in `maps.js`. `lapOf(cx, cz, m)` reads `m.w/m.h` and `m.bands` (`{band: 5, maxLap: 5}` from `META.bands`), falling
+back to the legacy 40×40 `{band: 3, maxLap: 5}` when called with no map.
+
+**`ANCHORS` is the test contract.** `integration.mjs` and `enemies-test.mjs` teleport to `ANCHORS` lookups rather than
+to literal grid cells (`enemy-art-test.mjs` needs none: it finds each creature record at runtime and walks to a cell near
+it); whoever moves a feature moves its anchor in the same commit. Beyond the feature cells each zone declares the probe
+cells the suites need — the Warden's axis (`wardenDark` `wardenNear`
+`wardenProbe` `wardenAside` `wardenOut`), clear sense lanes (`laneW` … `laneE`, `nsN`/`nsS`), the Drowner's shore
+(`drownerShore` `drownerSafe` `drownerWater` `otherWater`), each shortcut's `=` cell plus its `…Near` (barred) and
+`…Far` (`openFrom`) flanks, and the Source's `lap1`–`lap5`, `doors` and `crossings`.
+
+**`validateMap(rows, meta, {size, strict})` must pass with zero errors for all four zones plus both hubs**
+(`__game.mapsApi.validateAll()`, or `node scratchpad/validate-maps.mjs`, which also runs three negative controls).
+Checks: dimensions and border; legend; one `S`/`V` matching `entry`; altar only in the Source; connectivity with gates
+open; every item / `N` / `C` reachable; hunters and creatures reachable with gates closed unless `gateOk`; `G` in a deep
+neighbourhood; `w` in a water body; `Y` with LOS ≤ 6 u from a floor cell; meta agreement for hunters / creatures / npcs /
+gate / spots / loot — plus the ten contract checks: **1** size and the walkable / wall-share bands of §3.3; **2** markers
+on legal cells (`o r` on `.`/`D`, `R` in a `deep` region or standing in the flooded vault, `w` on `W`, `=` and `X` in a
+wall line); **3** first-run topology with gates open and every shortcut shut; **4** full connectivity with everything
+open, no orphan cell; **5** the shortcut rules of §3.6; **6** deep pockets ≥ 60 % `D` with a real entrance; **7** the
+region partition and its declared loot; **8** the route floor of §3.3 and the ≤ 70 % open ratio; **9** the entry pocket
+(≥ 3 free 4-neighbours, no spawn within 10 BFS cells); **10** the Source's laps (`lapOf(altar) === 5`, each creature's
+lap, every fissure joining L to L+1). `validateAll()` returns each zone's `stats` including `shortcuts` and
+`route: {closed, open}`, so every number in §3.3 and §3.2 can be read straight off the page.
+
+### 3.8 Hub — "The Last Lantern" (25×13 at x=+60; digits = building anchors)
 ```
 #########################
 #..1..#....F....#..2....#
@@ -501,64 +907,82 @@ row-major; `ZONES[id].creatures` lists per-kind options in the same order (Warde
 to satisfy `deepNeighbourhood`, a `w` to be water, a `Y` to have LOS to some `.`/`D` cell within 6 u, and every creature
 cell reachable from the spawn (gates closed for `L Y B w`; the Ossuary `G` is *behind* the gate on purpose: `gateOk`).
 
-**Undercroft** — base `H` (16,8) stays. `G` (26,2) facing **E**, `B` (4,17).
+**Undercroft** (62×62) — base `H` **(28,44)** in the Great Hall. `G` **(42,10)** facing **E** in the NE crypt,
+`B` **(5,42)** in the West Wing, leash 14.
 ```
-z1  #DDDDDDDD###############DDDDDDDDDDDDDDD#
-z2  #DDDRDDDD###############DDGDDDCDDRDDDDD#      G at x26: post at the west end of the NE crypt, facing east
-z3  #DNDDDDDD###############DDDoDDDDDDDDDDD#      cone reach 9 covers o (27,3) 1.4 u, spot C (30,2) 4 u, R (33,2) 7 u
-z4  #DDDDDDDD###############DDDDDDDDDDDDDDD#      and the doorway (34,4) at 8.25 u — seen on entry when the sweep is east,
-z5  ####X#############################.#####      but the doorway is just outside the 8 u territory: one step back ends a chase
-z15 #........#..............#..............#
-z16 #..P.....#...P......P...#......P.......#      B at (4,17): the west wing's middle chamber; leash 14 BFS covers the
-z17 #...B....#..............#........o.....#      wing (doors (4,14), (4,20)) and lets it stand in the hall mouths
-z18 #........#..............#..............#      (9,9) / (9,26) at BFS 13–14, never the great hall or the S stairs.
-```
-Justification: the player meets the Brute when going for Wick (5,22) and the relic (3,9) — the first "pools are not
-walls" lesson, mid-run — and the Warden when going for the NE crypt's rich relic and spot 0, the far corner. Both are
-away from the entry hall, so a first run still starts against the single base hunter.
+z9  #DD#DD#DD#DD#DD#DD#DD#DD#DD#DD#DD#D#DDDDDDDDDDDDDDDDDDDDDDDDr#      G at (42,10): the post at the west end of the NE crypt, facing
+z10 #Do#DD#DD#DD#DD#DD#DD#DD#DD#DD#rD#D#DDDDDDGDDDDDCDDDDDDDDDDDD#      east. Reach 9 along row z10 covers spot 0 C (48,10) at 6 u and
+z11 #DDDDDDDDDDDDDD#DDDDDDDDDDDDDDDDDDD#DDDDDDDDDDDDDDDDDDDDDDDDD#      the East Cloister door (50,12) at 8.25 u — inside the 9 u cone,
+z12 ###########################D######################D###########      outside the 8 u territory, so one step back still ends a chase.
 
-**Cistern** — base `H` (14,7) and (29,10) stay. `w` (20,13), `L` (30,27).
+z41 #.....#..#....#..P.P.P.P.P.P.P.P.P.P.##########.##############      B at (5,42): the second chamber of the wing spine. Leash 14 BFS
+z42 #....B........#......................#.......................#      covers Wick (4,47) at 10, the wing stair at 7 and the hall door
+z43 #######..#....#......................#...P...P.....P.....P...#      at 11 — but the hall centre is 23 and the S stairs 42, so it can
+z44 #.....#..#..................H................................#      never reach either.
 ```
-z9  #.WWWW............WWWWWW.........WWWW..#      The central lake (rows 9–17, x 14–27 at its widest) is one water body:
-z12 #...WWWW..P...WWWWWWWWWWWWWW...PWWW....#      the flood-fill from (20,13) never reaches the west/east bands or the
-z13 #....WWWW.....WWWWWWwWWWWWWW..WWWW.....#      south moat. Every causeway wraps around it, so it is a risky shortcut,
-z17 #.WWWW........P...WWWWWW..P......WWWW..#      never a mandatory crossing. Spot C (20,19) is 1.5 u from the south
-z19 #WWWW...............C.............WWWW.#      shore: the 30 s vigil is safe, one step north (20,18) is adjacent → trigger.
-z27 #....#......WWWW........WWWW..L....#...#      L at (30,27): the south-east hall on the way to Ines' cell block
-z28 #....#......WWWW.....r..WWWW.......#...#      (door (35,24) 5.8 u, Ines (38,22)); 24 u LOS across the open south hall.
-```
-Justification: the north hall keeps the two hunters plus the lake; the south hall gets the Lampwight, so the route to
-Ines is an oil tax rather than a death trap, and the flooded vault run (gate (20,5)) crosses nothing new.
+Justification, unchanged in spirit and moved outward with the map: the player meets the Brute on the way to Wick (4,47) —
+the first "pools are not walls" lesson, mid-run — and the Warden on the way to the NE crypt rich relic and spot 0, now
+the far corner at 83–89 BFS cells. Both are far from the Stair Head, so a first run still starts against the single base
+hunter in the Great Hall. `u_wingstair` opens *past* the Brute and `u_rood` still walks you under the Warden cloister
+door: no shortcut bypasses a guard.
 
-**Ossuary** — fast `H` (19,5) stays. `G` (12,6) facing **N**, `Y` (18,19), `Y` (26,25).
+**Cistern** (64×64) — base `H` **(20,17)** on the north cross causeway and **(30,40)** on the quay stub. `w` **(31,29)**
+in the lake, `L` **(46,52)** on the filter-bed walkway.
 ```
-z3  ##DRDDDDDD#DRD#DDDDDDDDD######DDDDDRDD##      G at (12,6): the reliquary is x11–13 × z2–6 behind the Censer gate X
-z4  ##DDDDDDDD#DDDXDDDDDrDDD######DDDDDDDD##      (14,4). Post at its south end facing north, sweep ±75°: both rich
-z5  ##DDDDDNDD#DRD#DDDDHDDDD######DDDDDDDD##      relics (12,3) 3 u and (12,5) 1 u are in the cone; the gate cell is
-z6  ##DDDDDDDD#DGD#DDDDDDDDD######DDDDDDDD##      2.8 u at bearing 45° — swept, so a lit player opening it is seen.
-z18 #.....................P......C.........#      Y at (18,19): the 2×2 alcove off corridor row 18 that holds the
-z19 #.##..##.########.Y###.######.#..###.###      relic (17,20): LOS from the mouth cells (16–18,18), its 6 u glow spills onto the corridor.
-z20 #.##o.##.########r.###.######.#r.###.###
-z24 #.......P..............................#      Y at (26,25): the alcove off corridor row 24 with the flask (25,26),
-z25 #...####.##..##.DDDDDD.##.Y##.######...#      (LOS from (24–27,24)), beside the south vault (spot C (19,28), the vigil).
-z26 #.r.####.##o.##.DDDDDD.##o.##.######.r.#
-```
-Justification: the Ossuary is where light-tech II makes the lamp reach 14 u, so it is the zone to teach "a glow you did
-not plant". Both false lights rest beside loot in alcoves the corridor shows you; the Warden makes the Censer reward a
-timing puzzle inside a deep pocket (lamp ×0.6) rather than a free grab.
+z29 #WW.#WW.#WW.#..#W#WW.WWWWWWWWWWwWWWWWWWWWWWWW#WWW..#.WW#.WW#.WW#      The Drowned Hall (z13-45, x13-50) is ONE water body of 765 cells:
+z43 #WW.#WW.###.#..#WWWWWWWWWWWWWW..WWWWWWWWWWWWWWWWW..#.###.WW#.WW#      the flood-fill from w (31,29) reaches the quay shore and nothing
+z44 #WW.#WW..WW.####WWWWWWWWWWWWWW......WWWWWWWWWWWWW..#.WW#.WW..WW#      else — not the vault, not the channels, not the Sunken Nave, not
+z45 #WW.#WW.#WW.=....................C...................WW#.WW#.WW#      the beds. Spot 0 C (33,45) sits on a quay 2 cells deep here, so
+                                                                    the 30 s vigil cell is never water-adjacent while one
+                                                                    step north (33,44) is → trigger. Today's reading, kept.
 
-**Source** — fast `H` (11,26) lap 3 and (37,30) lap 0 stay. `L` (7,20) lap 2 · `Y` (29,14) lap 3 · `B` (13,20) lap 4.
+z52 #.o...##......WPWWWPWWWPW=..............=.....L.............N..#      L at (46,52): the single walkway lane through the Filter Beds,
+                                                                    with 14 cells of open LOS east to Ines (60,52) — the
+                                                                    walk to the cartographer is still an oil tax.
 ```
-z12 #..#DD#DD###################RD#DD#DD#..#      Y at (29,14): two cells down the lap-3 east passage from the rich relic
-z13 #..#DD#DD#DDDDDDDDDDDDDDDDD#DD#DD#DD#..#      nook (28,12); LOS only from the passage end (28–29, 10–13), so you turn
-z14 #..#DD#DD#DDDDDDDDDDDDDDDDD#DY#DD#DD#..#      the corner, see a lantern by a rich relic, and grabbing R is 2.2 u from it.
-z20 #..#DD#LD#DD#BD#DDDDDDDD#DD#DD#DD#DD#..#      L at (7,20) on the lap-2 west corridor (long LOS along the 2-wide passage,
-                                                 a 24 u beacon); B at (13,20) on the lap-4 ring, one wall from the chamber.
-                                                 endgame.js dormancy applies to all three (wake at lap − 1).
+Justification: the lake keeps the Drowner, and both base hunters stand on causeway floor inside it (24 and 57 BFS from
+the entry); the Lampwight moved to the beds, so the route to Ines is a tax rather than a death trap, and the flooded
+vault behind the Sluice Key gate (16,6) crosses nothing new. `c_screen` opens *into* the Lampwight tanks.
+
+**Ossuary** (62×62) — fast `H` **(31,37)** on the Spine z37 crossing, the map's single choke. `G` **(19,9)** facing
+**N** inside the Reliquary (`gateOk`: it is *behind* the Censer gate on purpose). `Y` **(22,22)** in a Charnel Wheel
+spoke, `Y` **(52,38)** in a Deep Stacks cell.
 ```
-Justification: the Source stacks its lessons by depth — the Lampwight taxes oil on lap 2 exactly where the bands raise
-burn, the False light guards a rich relic at lap 3, and the Brute walks the last ring where lanterns are the only safe
-light and it takes them away. `pickSpawnCell` and `maxHunters` count only base/fast records.
+z4  ##DD#D#DD#D#DD##DDDRDD##DD#DDD##DDD#DD##DoD#DD#DD#DD#DD#DD#DD#      G at (19,9): the Reliquary is x15-22 x z1-12 behind the Censer
+z6  ##DDDDDDDDDDDD##DRDDDD##DDDDDD..DDDDDD..DDDDDDDDDDDDDDDDDDDDD#      gate X (15,7). Post at its south end facing north, sweep +/-75:
+z7  ##DDDNDDDDDDDDDXDDDDDD##DD#DDD##DDD#DD##DDDDDDDDDDDDDDDDDDDDD#      both rich relics (19,4) at 5.0 u and (17,6) at 3.6 u / 34 deg lie
+z9  ##DD#D#DD#D#DD##DDDGDD##DD#DDD##DDr#DD##DDD#DD#DD#DR#DD#DD#DD#      in the cone, and the gate cell is 4.5 u at 63 deg — swept, so a
+                                                                lit player opening it is seen.
+
+z22 ###.##.#.##.#####.###.Y.#..##o###.#######D####DDDDDD#######D##      Y at (22,22): the SW spoke alcove of the Charnel Wheel, relic
+z23 ###.#####......##.##.r#.##..#.###......##D####DDDDDD#######D##      (21,23) one cell away, seen from a floor cell at 5.1 u.
+
+z37 ##DDDDDDDDDDDD#................H.......###DD#DDDDD#DDDDD######      Y at (52,38): a honeycomb cell in the Deep Stacks, relic (51,38)
+z38 ##D##########D##.#########################DDDDD#DDDrY#DD######      one cell away, also 5.1 u — and o_stackdoor opens INTO it.
+```
+Justification: unchanged. The Ossuary is where light-tech II makes the lamp reach 14 u, so it is the zone that teaches
+"a glow you did not plant"; both false lights still rest beside loot in a pocket the corridor shows you, and the Warden
+still makes the Censer reward a timing puzzle inside a deep pocket (lamp ×0.6) rather than a free grab. The fast hunter
+now owns the one crossing every route must pass.
+
+**Source** (60×60, band 5) — fast `H` **(7,20)** lap 1, awake from the first step, and **(17,25)** lap 3. `L` **(13,30)**
+lap 2 in the Choir of Stones · `Y` **(41,26)** lap 3 on the Weeping Wall · `B` **(30,23)** lap 4 in the Antechamber. The
+row-major creature order is therefore `B · Y · L`.
+```
+z23 #..#.#DD#D#DDD##DD#D#DDDDDDDD#BDDDDDDDD#DRDD#D#DD##DDD##...#      B at (30,23): the Antechamber, the 4-wide hall the lap-4 break
+z26 #..#.#DD#D#DDoD#DD#D#DD#D#DDDDDDDD#DDDD#DYDD#D#DD#DDDD##...#      splits in two. Its west half holds the rich relic (26,24) and is
+z30 #..#.#DD#D#DDLD#DD#D#DD#DDDDDDADDD#DDDD#DD#D#D#DD##DDD#o...#      the last room before the chamber door (25,30) — lanterns are the
+                                                            only light there and it takes them.
+                                                            Y at (41,26): three cells down the Weeping Wall from its
+                                                            own rich relic (41,23), so you turn the corner, see a
+                                                            lantern beside an R, and the grab is 2.2 u from it.
+                                                            L at (13,30): the Choir of Stones, with column x13 kept
+                                                            clear so it is a 28-cell beacon down the lap-2 west leg.
+                                                            endgame.js dormancy still wakes each at lap - 1.
+```
+Justification: unchanged, now spread over ~950 cells to the altar instead of ~460. The Source stacks its lessons by
+depth — the Lampwight taxes oil on lap 2 exactly where the bands raise burn, the false light guards a rich relic on lap
+3, and the Brute walks the ring before the chamber. `pickSpawnCell` and `maxHunters` still count only base/fast records.
 
 ### 5.8 Architecture — how `hunter.js` grew
 One list (`ctx.hunters`), one record shape, one `update`/`syncMesh`/`catch` path; behaviour comes from a **profile
@@ -701,7 +1125,7 @@ last known position for `loseT` 4 s and then investigates — and sprinting stil
 - False light POUNCE 6.0 u/s for 1.5 s at 3.0 u proximity: unavoidable once it fires, but the flash aborts it and a pool
   is an absolute wall — the reactive run survived three pounces without a scratch.
 - Lampwight 12 oil per touch: 1–3 touches on a careless lit route (12–36 oil) — a real tax, never a death.
-- Drowner trigger 6 u: it only bites when you use the water; the Cistern's 30 s vigil spot (20,19) is 1.5 u from the
+- Drowner trigger 6 u: it only bites when you use the water; the Cistern's 30 s vigil spot (33,45) is one full cell from the
   shore, which is where the zone teaches it.
 - The deep Source stays the hardest ground in the game (no banking, `fast` chase 4.4 > sprint 4.2, up to four hunters
   plus the three creatures); the creature layer added pressure there but no deaths in the probe.
@@ -721,15 +1145,15 @@ last known position for `loseT` 4 s and then investigates — and sprinting stil
 
 | id | name | held in | unlocks | line |
 |---|---|---|---|---|
-| `lamplighter` | Wick the Lamplighter | Undercroft (5,22) | Workshop | "Every lamp I ever lit is out. Let's fix that." |
-| `cartographer` | Ines the Cartographer | Cistern (38,22) | Cartographer's Table | "I mapped every one of these halls. Then they moved." |
-| `keeper` | Oren the Oil-press Keeper | Ossuary (7,5) | Oil Press | "Relics burn better than they pray." |
-| `deacon` | Deacon Maud | Undercroft (2,3), behind the Pry Bar gate | Shrine; the Source | "The Source can be fed, or freed. Both are prayers." |
+| `lamplighter` | Wick the Lamplighter | Undercroft (4,47), the West Wing | Workshop | "Every lamp I ever lit is out. Let's fix that." |
+| `cartographer` | Ines the Cartographer | Cistern (60,52), the cell block | Cartographer's Table | "I mapped every one of these halls. Then they moved." |
+| `keeper` | Oren the Oil-press Keeper | Ossuary (5,7), the West Gallery | Oil Press | "Relics burn better than they pray." |
+| `deacon` | Deacon Maud | Undercroft (4,5), the NW crypt behind the Pry Bar gate | Shrine; the Source | "The Source can be fed, or freed. Both are prayers." |
 
 CAPTIVE (E within 1.6 u: "[E] Free Wick") → FOLLOW → rescued on bank ≤ 4 u away, or CAUGHT (hunter within 0.8 u, not in a
 pool) → sinks 1 s → CAPTIVE again in its cell (never lost). One follower at a time ("You cannot shepherd two"). Follow AI every
 0.25 s: BFS toward the player (pools not blocked), 3.5 u/s (5.0 beyond 6 u), stops at 1.5 u, snaps next to the player beyond
-14 u; wall-sliding radius 0.25. Rescued NPCs stand at their anchor +1 x in the hub (beside their building, never in a walkway — §3 hub), turn toward the
+14 u; wall-sliding radius 0.25. Rescued NPCs stand at their anchor +1 x in the hub (beside their building, never in a walkway — §3.8), turn toward the
 player within 5 u; E opens a dialogue with the next contract (1/Enter accepts).
 
 Contracts: each NPC posts one at a time in table order; max 2 active; progress in `save.contracts`. `fetch` = bank ≥ n of a kind
@@ -740,13 +1164,13 @@ item spawns at the spot, pick it up and bank it (lost on death like loot); `surv
 
 | id | poster | type | target | reward |
 |---|---|---|---|---|
-| `c_relight` | Wick | plant | Undercroft great hall (16,29) | Pry Bar + 4 pts |
+| `c_relight` | Wick | plant | Undercroft great hall, spot 1 (31,47) | Pry Bar + 4 pts |
 | `c_wick` | Wick | fetch | 4 oil flasks, Undercroft | 60 oil |
-| `c_sound` | Ines | survive 30 s | Cistern drowned hall (20,19), lamp allowed | Sluice Key |
-| `c_chart` | Ines | recover "lost chart" | Cistern pump room (3,26) | 8 pts |
+| `c_sound` | Ines | survive 30 s | Cistern drowned hall, spot 0 (33,45), lamp allowed | Sluice Key |
+| `c_chart` | Ines | recover "lost chart" | Cistern pump room, spot 1 (5,53) | 8 pts |
 | `c_censer` | Oren | fetch | 2 rich relics, Ossuary | Censer |
-| `c_ledger` | Oren | recover "ledger" | Ossuary east bone-pit (29,18) | 80 oil |
-| `c_vigil` | Maud | survive 45 s, lamp off | Ossuary south vault (19,28) | 10 pts |
+| `c_ledger` | Oren | recover "ledger" | Ossuary east bone-pit, spot 0 (50,21) | 80 oil |
+| `c_vigil` | Maud | survive 45 s, lamp off | Ossuary south vault, spot 1 (30,49) | 10 pts |
 | `c_bones` | Maud | fetch | 3 relics, Ossuary | 6 pts |
 
 ## 8. Hub buildings and services (`hub.js`)
@@ -759,7 +1183,7 @@ resource ledger only (`save.oil/relics/rich`); flame points are never spent.
 | Departure Board (5 · 15,9) | always | — | zones with lock reasons + active contract targets; 1–4 selects `save.zoneSelected`; stairs, tram and elevator all descend there |
 | Workshop (1 · 3,1) | Wick | 6 relics | Light-tech I–III (§4) |
 | Oil Press (2 · 19,1) | Oren | 80 oil | press 1 / all relics at 30 oil each; "Deeper reservoir" 5 then 8 relics → +15 start oil each |
-| Cartographer's Table (3 · 3,4) | Ines | 100 oil | Tab minimap (200×200 canvas, 5 px/cell, 8 Hz): cells seen within lamp distance (≤ 16 u, 2 u dark) with LOS, plus bordering walls; items seen, lanterns, spots ◇, exit ▲, NPCs; per-zone bitset saved base64; % charted per zone |
+| Cartographer's Table (3 · 3,4) | Ines | 100 oil | Tab minimap (200×200 canvas, `px = max(2, min(5, floor(min(W/w, H/h))))` — 5 px/cell in the 25×13 hub, **3 px/cell** in the 60–64 wide zones, 8 Hz): cells seen within lamp distance (≤ 16 u, 2 u dark) with LOS, plus bordering walls; items seen, lanterns, spots ◇, exit ▲, NPCs; tool gates brown `#8a6a3a`; **shortcuts dim green `#2f8f6a` while barred and mint `#5ff0b0` + a mint diamond once opened** — an opened one is drawn whether or not its cell is in the explored bitset, because you know it is there; per-zone bitset saved base64 (a stored bitset whose length does not match the current grid is dropped, §3.3); % charted per zone |
 | Shrine (4 · 21,4) | Maud | 150 oil | toggle blessing: 40 oil charged at each descent; on death ⌊half⌋ of each carried kind is banked anyway |
 | Tram dock (6 · 2,9) | flame tier 2 | 120 oil | opens The Cistern (ride menu at the cart) |
 | Elevator (7 · 22,9) | flame tier 3 | 250 oil + 4 relics | opens The Ossuary and the way to The Source |
@@ -802,11 +1226,17 @@ sink, pounce chitter, reveal shriek, the Brute's snort at a flash, a per-killer 
 Written debounced 250 ms on every event and on pagehide. Imports v1 `undercroft-proto` points/oil once and keeps mirroring
 `{points, bankedOil}` to it. Unknown keys are ignored, wrong types fall back to defaults.
 ```js
-{ v: 2, points, oil, relics, rich, lightTech, reservoir, buildings: {workshop, press, cart, shrine, tram, elevator},
-  rescued: {lamplighter, cartographer, keeper, deacon}, tools: {prybar, sluice, censer}, gatesOpened: {zoneId: {...}},
+{ v: 3, points, oil, relics, rich, lightTech, reservoir, buildings: {workshop, press, cart, shrine, tram, elevator},
+  rescued: {lamplighter, cartographer, keeper, deacon}, tools: {prybar, sluice, censer},
+  gatesOpened: {zoneId: [gateId]},        // stable ids (the zone's tool), never cell indices
+  shortcuts:   {zoneId: [shortcutId]},    // `=` doors lifted for good (§3.6)
   contracts: {active: [], done: [], progress: {}}, zoneSelected, blessing, endings: {cage, dawn, night},
   explored: {zoneId: base64 bitset}, stats: {runs, deaths, rescues, banked}, audio: {vol, muted}, importedV1 }
 ```
+**v2 → v3 migration** (§3.6, additive): a v2 record keeps points/oil/relics/tools/buildings/rescued/
+contracts/endings/stats verbatim; `explored` is dropped (a 40×40 bitset would light random cells once a zone is
+re-authored bigger) and numeric `gatesOpened` entries are dropped (they were 40×40 cell indices) — the only cost is one
+`E` press on a gate whose tool the save already owns. Unknown versions and entry types are ignored, never crashed on.
 
 ## 12. Modules, ctx and events (`main.js` owns the loop)
 
@@ -818,7 +1248,8 @@ synchronous event bus (`on/off/emit`, try/catch per listener). Frame: `dt = min(
 | File | Owns |
 |---|---|
 | `config.js` | `CFG`, `HUNTER`, `HUNTER_PROFILES`, `CREATURE`, `TIERS`, `SCONCE_INT`, `POINTS`, `LIGHT_TECH`, `BUILD_COSTS`, `AUDIO`, `KEYS`, `TOOLS`, `HUB_WARMTH`, `EMBERS`, `HUB_BLOCK` |
-| `maps.js` | rows, `ZONES`, `PALETTES`, `HUB_ROWS_V2`, `parseMap`, `zoneLocked`, `lapOf`, grid helpers (`idx`, `isSolid`, `los`, `bfsField`, `pathTo`, …) |
+| `maps.js` | the legend, `TUNING`, `PALETTES`, hub rows, `parseMap`/`parseZone`, `zoneLocked`, `lapOf`, grid helpers (`idx`, `isSolid`, `los`, `bfsField`, `pathTo`, `routeCells`), `validateMap`/`validateAll`, the `ZONES` assembly |
+| `maps/<zone>.js` | one file per zone (§3.7): `ID SIZE ROWS REGIONS SHORTCUTS ANCHORS META` — the ASCII map, its region partition, its shortcut doors, the test anchors and every map-shaped number |
 | `models.js` | `box/build/pattern`, factories: hunter, npc, flask, relic, richRelic, quest, bundle, lantern, stairs, elevator, gate, altar, water, tram, workshop, oilPress, cartTable, shrine, board, flameBase (≤ 30 boxes each; `models.html` previews them); hub props as box lists (`PROP_BOXES`: rug, bench, bedroll, crate, crateStack, barrel, logPile, cookpot, bookshelf, herbRail, candleCluster, hangLantern, stool) with `placeBoxes` / `mergeBoxes` (one solid + one glow mesh for any number of boxes) |
 | `world.js` | instanced blocks, palette/fog (+ hub warmth per tier), items, lanterns, sconces, hub camp props + hanging lanterns + `map.blockMask`, gates, water surface, collision helpers |
 | `hunter.js` | `ctx.hunters`, senses, the shared FSM driver and the per-creature `PROFILES` table (§5) |
@@ -830,7 +1261,7 @@ synchronous event bus (`on/off/emit`, try/catch per listener). Frame: `dt = min(
 | `main.js` | loop, `ctx`, events, input, player movement/lamp/flash/lantern/topUp/interact, transitions, `window.__game` |
 
 Main events: `begin`, `hubEnter`, `zoneEnter`, `zoneExit`, `pickup`, `bank`, `flameTier`, `death`, `hunterCatch`,
-`hunterState`, `flash`, `lantern`, `lanternRemoved`, `gateOpened`, `npcFreed`, `npcCaught`, `npcRescued`, `contractAccepted`,
+`hunterState`, `flash`, `lantern`, `lanternRemoved`, `gateOpened`, `shortcutOpened`, `npcFreed`, `npcCaught`, `npcRescued`, `contractAccepted`,
 `contractComplete`, `contractFailed`, `toolGained`, `build`, `lightTech`, `service`, `zoneSelected`, `blessing`, `lap`,
 `ending`, `uiClick`, `uiError`, `toast`, plus the creature events of §5.8 (`lampSnuffed`, `lanternSmashed`, `wardenAlert`,
 `wardenReturn`, `drownerSurge`, `drownerSink`, `falseLightPounce`, `falseLightReveal`, `flashResisted`, `creatureStep`). `window.__game` (alias `__proto`) exposes `ctx` fields and `actions.{loadZone,
@@ -846,6 +1277,8 @@ selectZone, freeNpc, accept, build, choose, giveTool, setPoints, setResources, r
 - [ ] Bank 6+ pts ⇒ tier 2 toast, hub brighter, tram ghost; tier 3 elevator; tier 4 at 30 pts.
 - [ ] Death ⇒ bundle at the death spot, points intact, recoverable next run; blessing banks half.
 - [ ] Free Wick, bank with him ≤ 4 u ⇒ rescued, Workshop ghost, contract offered; Pry Bar opens the NW crypt to Maud.
+- [ ] A barred `=` door refuses `E` from the entrance side ("Barred from the other side") and lifts with one `E` from
+      its far side; the toast fires, the minimap turns mint, and it is still open after a death and a reload (§3.6).
 - [ ] Board locks: Cistern until Tram, Ossuary until Elevator + Light-tech II, Source until tier 4 + Maud.
 - [ ] All 8 contracts complete and pay; Workshop/Press/Table/Shrine services work; Tab minimap shows explored cells.
 - [ ] Source: darker per lap, extra hunters at laps 3–4, ride-up confirm, altar choice; `dawn` greyed unless tier 4 & 3 rescued; `save.endings` set.

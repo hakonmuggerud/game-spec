@@ -1,7 +1,8 @@
 // world.js — scene geometry: instanced blocks, hub, zone loading, per-zone palette/fog, items, planted
-// lanterns, sconces, gates (X), water (W), elevators (V), collision (DESIGN.md §3–4, DESIGN-v2 §2).
+// lanterns, sconces, gates (X), shortcuts (=), water (W), elevators (V), collision (DESIGN.md §3–4, DESIGN.md §3.6).
 // Talks to other modules only via ctx + events. Listens: flameTier, hubEnter, zoneEnter, zoneExit, toolGained.
-// Emits: gateOpened {zoneId, cx, cz, idx, tool}, gateLocked {zoneId, cx, cz, tool}, zoneIntro {zoneId, text},
+// Emits: gateOpened {zoneId, id, cx, cz, idx, tool}, gateLocked {zoneId, cx, cz, tool}, zoneIntro {zoneId, text},
+//        shortcutOpened {zoneId, id, name, cx, cz, idx},
 //        waterEnter / waterExit {x, z} (player crossing a W boundary — audio "slosh", hunters use player.inWater).
 import * as THREE from 'three';
 import { CFG, SCONCE_INT, TOOLS, HUB_OX, HUB_WARMTH, HUB_BLOCK } from './config.js';
@@ -88,7 +89,9 @@ export function init(c) {
   // ctx.world: debug/integration surface (also mirrored onto window.__game.world once main has created it)
   ctx.world = {
     validate: MAPS.validateAll, validateZone: MAPS.validateZone, palettes: MAPS.PALETTES, zoneLocked: MAPS.zoneLocked,
-    openGate, gateAt, gateStatus, isWater: (wx, wz) => { const m = ctx.player.map; if (!m) return false; const c = toCell(m, wx, wz); return isWater(m, c.cx, c.cz); },
+    openGate, gateAt, gateStatus, openShortcut, shortcutAt, shortcutStatus, shortcutSide,
+    shortcuts: () => ((ctx.zone && ctx.zone.shortcuts) || []).map(s => ({ id: s.id, name: s.name, cx: s.cx, cz: s.cz, idx: s.idx, openFrom: s.openFrom, open: !!s.open, mesh: !!s.mesh })),
+    isWater: (wx, wz) => { const m = ctx.player.map; if (!m) return false; const c = toCell(m, wx, wz); return isWater(m, c.cx, c.cz); },
     waterCells: () => water.cells.length, atmosphere: () => atmos.current, applyAtmosphere,
     spawnItem, removeItem, spawnLantern, removeLantern, setAlcoveTier, alcoveTier: () => alcoveTier, loadZone, unloadZone,
     setHubLights, culledLights: () => culledLights.length,
@@ -151,7 +154,7 @@ function buildBlocks(m, group, meta, { hole = false } = {}) {
     ceil:   { geo: box(S, 0.2, S),     y: 3.1,   color: pal.ceil,   list: [] },
   };
   const bands = meta && meta.deepStyle === 'bands';
-  const lapOf = (x, z) => (bands ? MAPS.lapOf(x, z) : 0);
+  const lapOf = (x, z) => (bands ? MAPS.lapOf(x, z, m) : 0);
   for (let z = 0; z < m.h; z++) for (let x = 0; x < m.w; x++) {
     const t = m.cells[idx(m, x, z)], p = center(m, x, z), lap = lapOf(x, z);
     if (t === T.WALL) { kinds.wall.list.push({ ...p, lap }); continue; }
@@ -330,18 +333,27 @@ export function loadZone(id) {
   unloadZone();
   const map = MAPS.parseZone(id);
   const group = new THREE.Group(); group.name = `zone:${id}`;
-  const zone = { id, meta, map, group, spots: map.spots, gates: map.gates, npcCells: map.npcCells, npcCell: map.npcCells[0] || null,
+  const zone = { id, meta, map, group, spots: map.spots, gates: map.gates, shortcuts: map.shortcuts, npcCells: map.npcCells, npcCell: map.npcCells[0] || null,
     altar: map.altar, exit: map.stairs, palette: meta.palette };
   ctx.zone = zone; ctx.state.zoneId = id;
-  // gates already opened in this save stay open
+  // gates already opened in this save stay open (save.gatesOpened[zoneId] holds stable string ids — never cell
+  // indices, because the grids change size; a legacy numeric entry is ignored, costing one E press, DESIGN.md §3.6)
   const opened = (ctx.save.gatesOpened && ctx.save.gatesOpened[id]) || [];
   for (const g of map.gates) {
-    if (opened.includes(g.idx)) { g.open = true; map.cells[g.idx] = T.FLOOR; continue; }
+    if (opened.includes(g.id)) { g.open = true; map.cells[g.idx] = T.FLOOR; continue; }
     const p = center(map, g.cx, g.cz);
     g.mesh = models.gate(); g.mesh.position.set(p.x, 0, p.z); g.mesh.name = `gate:${g.cx},${g.cz}`;
     // bars face across the narrower opening: vertical if the wall runs north-south
     if (isSolid(map, g.cx, g.cz - 1) && isSolid(map, g.cx, g.cz + 1)) g.mesh.rotation.y = Math.PI / 2;
     group.add(g.mesh);
+  }
+  // shortcuts (=): opened ones (save.shortcuts[zoneId] = [id, …]) become floor with the bars raised into the lintel;
+  // the rest stay T.SHORTCUT — solid and sight-blocking — behind the barred model (DESIGN.md §3.6)
+  const scOpen = (ctx.save.shortcuts && ctx.save.shortcuts[id]) || [];
+  for (const s of map.shortcuts) {
+    const isOpen = !!s.id && scOpen.includes(s.id);
+    if (isOpen) { s.open = true; map.cells[s.idx] = T.FLOOR; }
+    addShortcutMesh(map, group, s);
   }
   buildBlocks(map, group, meta);
   if (map.stairs) buildStairsMarker(map, group);
@@ -359,7 +371,7 @@ export function unloadZone() {
   ctx.scene.remove(z.group);
   z.group.traverse(o => { if (o.isMesh) { if (o.geometry) o.geometry.dispose(); if (o.material && !o.material._shared) o.material.dispose(); } });
   water.mesh = null; water.cells = [];
-  ctx.zone = { id: null, meta: null, map: null, group: null, spots: [], gates: [], npcCells: [], npcCell: null, altar: null, exit: null, palette: null };
+  ctx.zone = { id: null, meta: null, map: null, group: null, spots: [], gates: [], shortcuts: [], npcCells: [], npcCell: null, altar: null, exit: null, palette: null };
   ctx.state.zoneId = null;
 }
 
@@ -418,8 +430,67 @@ export function openGate(cx, cz, { force = false } = {}) {
   if (g.mesh) { z.group.remove(g.mesh); g.mesh = null; }
   const so = ctx.save.gatesOpened || (ctx.save.gatesOpened = {});
   const list = so[z.id] || (so[z.id] = []);
-  if (!list.includes(g.idx)) list.push(g.idx);
-  ctx.events.emit('gateOpened', { zoneId: z.id, cx, cz, idx: g.idx, tool: st.tool });
+  const gid = g.id || st.tool || 'gate';
+  if (!list.includes(gid)) list.push(gid);
+  ctx.events.emit('gateOpened', { zoneId: z.id, id: gid, cx, cz, idx: g.idx, tool: st.tool });
+  return true;
+}
+
+/* ---------- shortcuts (=) — DESIGN.md §3.6 ---------- */
+// A shortcut is one (or two adjacent) barred cells in a wall line. Barred = solid + sight-blocking (maps.isSolid);
+// `E` from the `openFrom` side only lifts the bars for good. No tool, no corridor: it removes a detour.
+const SHORTCUT_YAW = { N: 0, S: Math.PI, E: -Math.PI / 2, W: Math.PI / 2 };   // model front (-Z) faces the openFrom side
+function addShortcutMesh(map, group, s) {
+  const p = center(map, s.cx, s.cz);
+  s.mesh = s.open ? models.shortcutOpen() : models.shortcutBarred();
+  s.mesh.position.set(p.x, 0, p.z);
+  s.mesh.rotation.y = SHORTCUT_YAW[s.openFrom] != null ? SHORTCUT_YAW[s.openFrom] : 0;
+  s.mesh.name = `shortcut:${s.id || '?'}:${s.cx},${s.cz}`;
+  group.add(s.mesh);
+}
+function disposeMesh(group, mesh) {
+  if (!mesh) return;
+  group.remove(mesh);
+  mesh.traverse(o => { if (o.isMesh) { if (o.geometry) o.geometry.dispose(); if (o.material && !o.material._shared) o.material.dispose(); } });
+}
+// shortcutAt(cx, cz) → the shortcut record at that cell (open or not) or null.
+export function shortcutAt(cx, cz) { const z = ctx.zone; return (z && z.shortcuts && z.shortcuts.find(s => s.cx === cx && s.cz === cz)) || null; }
+// shortcutSide(s, wx, wz) → 'far' when (wx, wz) is on the `openFrom` side of the door, else 'near' (the barred side).
+export function shortcutSide(s, wx, wz) {
+  const m = ctx.zone.map; if (!m || !s) return 'near';
+  const p = center(m, s.cx, s.cz);
+  const d = SHORTCUT_YAW[s.openFrom] == null ? 0
+    : s.openFrom === 'N' ? p.z - wz : s.openFrom === 'S' ? wz - p.z : s.openFrom === 'E' ? wx - p.x : p.x - wx;
+  return d > 0 ? 'far' : 'near';
+}
+// shortcutStatus(s, wx, wz) → {open, id, name, openFrom, side, canOpen}.
+export function shortcutStatus(s, wx, wz) {
+  const side = s ? shortcutSide(s, wx, wz) : 'near';
+  return { open: !!(s && s.open), id: s ? s.id : null, name: s ? s.name : null, openFrom: s ? s.openFrom : null, side, canOpen: !!s && !s.open && side === 'far' };
+}
+// openShortcut(cx, cz, {force}) → true when it opened. Refuses from the barred side unless `force`. Opening turns
+// every cell of the door group to floor, swaps the barred model for the open one, records the id in
+// save.shortcuts[zoneId] (so it stays open for good) and emits shortcutOpened (hunter/npc drop their paths).
+export function openShortcut(cx, cz, { force = false, from = null } = {}) {
+  const z = ctx.zone; if (!z || !z.map) return false;
+  const s = z.shortcuts.find(s => s.cx === cx && s.cz === cz && !s.open);
+  if (!s) return false;
+  if (!force) {
+    const p = from || ctx.player;
+    if (shortcutSide(s, p.x, p.z) !== 'far') return false;
+  }
+  const group = s.id ? z.shortcuts.filter(o => o.id === s.id) : [s];
+  for (const o of group) {
+    o.open = true; z.map.cells[o.idx] = T.FLOOR;
+    disposeMesh(z.group, o.mesh); o.mesh = null;
+    addShortcutMesh(z.map, z.group, o);
+  }
+  if (s.id) {
+    const so = ctx.save.shortcuts || (ctx.save.shortcuts = {});
+    const list = so[z.id] || (so[z.id] = []);
+    if (!list.includes(s.id)) list.push(s.id);
+  }
+  ctx.events.emit('shortcutOpened', { zoneId: z.id, id: s.id, name: s.name, cx: s.cx, cz: s.cz, idx: s.idx });
   return true;
 }
 

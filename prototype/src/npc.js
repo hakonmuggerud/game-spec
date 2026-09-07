@@ -1,7 +1,7 @@
 // npc.js — captive NPCs, follow AI, hub placement and dialogue (DESIGN-v2 §3).
 // Owns ctx.npcs (the NPC records currently present: zone captives/follower, or hub residents) and
 // ctx.player.follower (the record of the NPC following the player, or null).
-// Listens: zoneEnter, zoneExit, hubEnter, bank, hunterCatch (target 'npc'), death, gateOpened, key, menuClose, flameTier.
+// Listens: zoneEnter, zoneExit, hubEnter, bank, hunterCatch (target 'npc'), death, gateOpened, shortcutOpened, key, menuClose, flameTier.
 // Emits: npcFreed {id, x, z}, npcCaught + npcLost {id, x, z, hunterId}, npcRescued {id, zoneId}, npcTalk {id}, uiClick, uiError.
 // Only config.js / maps.js / models.js may be imported; everything else is reached through ctx (feature-detected).
 // Debug surface: ctx.npc (mirrored onto window.__game.npc) = {free, talk, follower, stimulus, caught, atHub, captives, get, NPCS, NPC_CFG}.
@@ -28,14 +28,17 @@ export const NPC_CFG = {
   radius: 0.25,        // follower body radius for wall sliding
 };
 
+// `cell` is only the LAST-RESORT fallback: zoneCellFor() prefers the zone file's `META.npcs` (DESIGN.md §3.7), which
+// is what every zone supplies. Kept in step with the authored 62/64-cell maps so the fallback can never place a
+// captive inside a wall.
 export const NPCS = {
-  lamplighter: { name: 'Wick the Lamplighter', short: 'Wick', pronoun: 'him', zone: 'undercroft', cell: [5, 22], unlocks: 'workshop', anchor: '1',
+  lamplighter: { name: 'Wick the Lamplighter', short: 'Wick', pronoun: 'him', zone: 'undercroft', cell: [4, 47], unlocks: 'workshop', anchor: '1',
     coat: 0xb8862a, hat: 0x2a2a2a, line: 'Every lamp I ever lit is out. Let\'s fix that.' },
-  cartographer: { name: 'Ines the Cartographer', short: 'Ines', pronoun: 'her', zone: 'cistern', cell: [38, 22], unlocks: 'cart', anchor: '3',
+  cartographer: { name: 'Ines the Cartographer', short: 'Ines', pronoun: 'her', zone: 'cistern', cell: [60, 52], unlocks: 'cart', anchor: '3',
     coat: 0x6a8ab0, hat: 0x3a5a7a, line: 'I mapped every one of these halls. Then they moved.' },
-  keeper: { name: 'Oren the Oil-press Keeper', short: 'Oren', pronoun: 'him', zone: 'ossuary', cell: [7, 5], unlocks: 'press', anchor: '2',
+  keeper: { name: 'Oren the Oil-press Keeper', short: 'Oren', pronoun: 'him', zone: 'ossuary', cell: [5, 7], unlocks: 'press', anchor: '2',
     coat: 0xc8b070, hat: 0x7a3a2a, line: 'Relics burn better than they pray.' },
-  deacon: { name: 'Deacon Maud', short: 'Maud', pronoun: 'her', zone: 'undercroft', cell: [2, 3], unlocks: 'shrine', anchor: '4',
+  deacon: { name: 'Deacon Maud', short: 'Maud', pronoun: 'her', zone: 'undercroft', cell: [4, 5], unlocks: 'shrine', anchor: '4',
     coat: 0xe0d8c0, hat: 0x4a3a6a, line: 'The Source can be fed, or freed. Both are prayers.' },
 };
 // Hub stand spots when the hub map has no building anchors (v1 17×9 hub): cells around the flame.
@@ -397,6 +400,7 @@ export function init(c) {
     if ((ctx.state.mode === 'HUB' || ctx.state.mode === 'TITLE' || (ctx.state.mode === 'MENU' && ctx.state.prevMode === 'HUB')) && ctx.hub.map) placeHub();
   });
   ev.on('gateOpened', () => { const f = ctx.player.follower; if (f) { f.path = []; f.pathT = 0; } });
+  ev.on('shortcutOpened', () => { const f = ctx.player.follower; if (f) { f.path = []; f.pathT = 0; } });
   ev.on('key', onKey);
   ev.on('menuClose', () => { pendingOffer = null; });
   // save reset re-emits the initial flameTier: re-place the hub residents from the (now empty) rescued set

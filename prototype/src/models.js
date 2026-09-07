@@ -297,6 +297,38 @@ export function gate() {
   b.push(box(0.3, 1.25, 0, 0.18, 0.22, 0.14, 0x6a5a30, 'lock'));
   return finish(build(b, { jitter: 0.03 }), 'gate');
 }
+// shortcutBarred() / shortcutOpen() — the `=` shortcut door (DESIGN.md §3.6).
+// PLACEHOLDER ART (built by the maps groundwork, not by the art agent): a readable portcullis, not the final piece.
+// The art agent owns the final look; keep the contract: origin at the cell centre on the floor, front faces -Z,
+// spans ≤ 1 u in x, ≤ 3.4 tall, and the ONLY difference between the two must be that the bars are up.
+// `opts.side` = +1 / −1 along the door's own -Z axis: which side carries the brass lift-bar and its amber glint,
+// i.e. the `openFrom` side, so the player can read through the bars which side opens it. world.js yaws the group
+// so -Z points at the openFrom flank, so `side` is +1 in practice; -1 is there for models.html.
+export function shortcutBarred({ side = 1 } = {}) {
+  const timber = 0x3a2a1a, iron = 0x2a2420, brass = 0x8a6a2a, b = [];
+  b.push(box(0, 2.6, 0, 1.02, 0.4, 0.34, timber, 'lintel'));                       // stone/timber lintel
+  b.push(box(-0.46, 0, 0, 0.1, 2.6, 0.28, timber, 'jambL'), box(0.46, 0, 0, 0.1, 2.6, 0.28, timber, 'jambR'));
+  for (let i = -2; i <= 2; i++) b.push(box(i * 0.18, 0, 0, 0.09, 2.6, 0.09, iron, `bar${i + 2}`));   // 5 heavy bars
+  b.push(box(0, 0.5, 0, 0.84, 0.08, 0.1, iron, 'crossLow'), box(0, 1.9, 0, 0.84, 0.08, 0.1, iron, 'crossHigh'));
+  b.push(box(0.34, 2.18, 0, 0.2, 0.2, 0.2, iron, 'drum'), box(0.34, 1.2, 0, 0.05, 1.0, 0.05, iron, 'chain'));
+  // the lift-bar and its glint sit on the far side only: that is the side E works from
+  b.push(box(0, 1.15, side * -0.17, 0.7, 0.12, 0.06, brass, 'liftBar'));
+  b.push(glow(0.26, 1.15, side * -0.21, 0.08, 0.08, 0.04, 0xffb040, 0.9, 'glint'));
+  return finish(build(b, { jitter: 0.03 }), 'shortcutBarred', { side });
+}
+// Same frame with the bars raised into the lintel (y 2.2–3.0): walkable underneath, and still visible from far off,
+// so the player can always see which shortcut they have opened.
+export function shortcutOpen({ side = 1 } = {}) {
+  const timber = 0x3a2a1a, iron = 0x2a2420, brass = 0x8a6a2a, b = [];
+  b.push(box(0, 2.6, 0, 1.02, 0.4, 0.34, timber, 'lintel'));
+  b.push(box(-0.46, 0, 0, 0.1, 2.6, 0.28, timber, 'jambL'), box(0.46, 0, 0, 0.1, 2.6, 0.28, timber, 'jambR'));
+  for (let i = -2; i <= 2; i++) b.push(box(i * 0.18, 2.2, 0, 0.09, 0.8, 0.09, iron, `bar${i + 2}`));   // raised
+  b.push(box(0, 2.2, 0, 0.84, 0.08, 0.1, iron, 'crossLow'), box(0, 2.98, 0, 0.84, 0.08, 0.1, iron, 'crossHigh'));
+  b.push(box(0.34, 2.18, 0, 0.2, 0.2, 0.2, iron, 'drum'), box(0.34, 2.2, 0, 0.05, 0.8, 0.05, iron, 'chain'));
+  b.push(box(0, 2.24, side * -0.17, 0.7, 0.12, 0.06, brass, 'liftBar'));
+  b.push(glow(0.26, 2.24, side * -0.21, 0.08, 0.08, 0.04, 0xffb040, 0.5, 'glint'));
+  return finish(build(b, { jitter: 0.03 }), 'shortcutOpen', { side });
+}
 // altar() — the Source: step, ring of 8 stones, bowl, 3-box flame (violet → orange); 13 boxes.
 // userData.flame = [meshes], userData.update(t) sways the flame.
 export function altar() {
@@ -910,7 +942,7 @@ export const CREATURE_MODELS = { base: hunter, fast: hunter, lampwight, warden, 
 export const MODELS = {
   hunter, npc, flask, relic, richRelic, quest, bundle, lantern,
   lampwight, warden, drowner, falseLight, brute, lanternDebris, emberBurst,
-  stairs, elevator, gate, altar, water: waterTile,
+  stairs, elevator, gate, shortcutBarred, shortcutOpen, altar, water: waterTile,
   tram, workshop, oilPress, cartTable, shrine, board, flameBase,
   // hub props (merged into two draw calls by world.js; these factories are for models.html / makeModel)
   rug, bench, bedroll, crate, crateStack, barrel, logPile, cookpot, bookshelf, herbRail, candleCluster, hangLantern, stool,

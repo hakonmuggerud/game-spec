@@ -237,6 +237,14 @@ const SOUNDS = {
     note('square', 180, 120, t0, 0.18, 0.005, 0.5, { sweep: 0.4 });
     burst(t0, 0.25, 0.003, 0.25, { type: 'bandpass', f0: 2200, f1: 600, q: 2, sweep: 0.25 });
   },
+  // shortcut (DESIGN.md §3.6): the gate cue pitched down, a chain rattle and a stone boom under it.
+  // PLACEHOLDER MIX — the audio agent owns the final cue; keep the name `shortcut`.
+  shortcut(t0) {
+    note('square', 110, 70, t0, 0.16, 0.005, 0.7, { sweep: 0.5 });
+    for (let i = 0; i < 5; i++) burst(t0 + 0.02 * i, 0.12, 0.002, 0.09, { type: 'bandpass', f0: 2600 - 120 * i, q: 3, pan: rnd(-0.3, 0.3) });
+    note('sine', 55, 38, t0 + 0.05, 0.22, 0.02, 1.1, { sweep: 0.9 });
+    burst(t0 + 0.05, 0.18, 0.01, 0.6, { type: 'lowpass', f0: 260, f1: 90, q: 0.7, sweep: 0.5 });
+  },
   flameTier(t0) {
     note('sine', 65, 130, t0, 0.2, 0.3, 1.2, { sweep: 1.0 });
     burst(t0, 0.15, 0.4, 0.8, { type: 'lowpass', f0: 300, f1: 1800, q: 0.7, sweep: 0.6 });
@@ -304,6 +312,7 @@ export function init(c) {
   on('lampToggle', ({ on: lit }) => play(lit ? 'lampOn' : 'lampOff'));
   on('topUp', () => play('topUp'));
   on('gateOpened', () => play('gate'));
+  on('shortcutOpened', () => play('shortcut'));
   on('gateLocked', () => play('uiError'));
   on('waterEnter', () => play('slosh'));
   on('flameTier', ({ initial }) => { if (!initial) play('flameTier'); });

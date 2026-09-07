@@ -2,7 +2,7 @@
 // table (DESIGN.md §5 + §5.8, DESIGN-v2 §2–3). Owns ctx.hunters: one list, one record shape, one
 // update/syncMesh/catch path; what differs per creature is `PROFILES[profile]` (senses, movement predicate, FSM states,
 // flash/catch reactions, animation hooks).
-// Listens: zoneEnter, zoneExit, hubEnter, lantern, lanternRemoved, gateOpened, npcCaught.
+// Listens: zoneEnter, zoneExit, hubEnter, lantern, lanternRemoved, gateOpened, shortcutOpened, npcCaught.
 // Emits: hunterState {id, state, prev}, hunterCatch {x, z, hunterId, target} · lampSnuffed {hunterId, oil, lockout, x, z} ·
 //        lanternSmashed {hunterId, x, z} · wardenAlert {hunterId, x, z} · wardenReturn {hunterId} · drownerSurge {hunterId, x, z} ·
 //        drownerSink {hunterId} · falseLightPounce {hunterId, x, z} · falseLightReveal {hunterId, x, z} ·
@@ -33,6 +33,7 @@ export function init(c) {
   ev.on('lantern', () => recomputePools());
   ev.on('lanternRemoved', () => recomputePools());
   ev.on('gateOpened', () => { for (const h of ctx.hunters) h.path = []; });
+  ev.on('shortcutOpened', () => { for (const h of ctx.hunters) h.path = []; });   // DESIGN.md §3.6: same as a gate
   // a follower was taken (npc.js): that hunter stands over the spot for catchBusyT, then wanders on
   ev.on('npcCaught', ({ hunterId }) => {
     const h = hunterId != null ? ctx.hunters[hunterId] : null;

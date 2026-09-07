@@ -56,6 +56,7 @@ function targetLabel(t) {
   if (t.type === 'bank') return t.empty ? '[E] Return to the Lantern' : '[E] Bank loot';
   if (t.type === 'descend') return '[E] Descend';
   if (t.type === 'gate') return t.locked ? `Locked — needs ${t.toolName}` : '[E] Open the gate';
+  if (t.type === 'shortcut') return t.barred ? 'Barred from the other side' : '[E] Lift the bars';
   return '';
 }
 export function hintText() {
