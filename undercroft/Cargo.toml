@@ -1,0 +1,59 @@
+[workspace]
+resolver = "2"
+members = [
+  "crates/undercroft-data",
+  "crates/undercroft-sim",
+  "crates/undercroft",
+]
+# Bare `cargo build` / `cargo test` build only the engine-free crates. The Bevy app is
+# built explicitly with `-p undercroft`; on the 3 GB sandbox VM that build OOM-crashed
+# the machine, so do not run it there until the VM has more RAM.
+default-members = ["crates/undercroft-data", "crates/undercroft-sim"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+publish = false
+
+# Every dependency any lane may use is declared here once, so parallel lanes never
+# edit the same manifest lines. Crates opt in with `foo = { workspace = true }`.
+[workspace.dependencies]
+undercroft-data = { path = "crates/undercroft-data" }
+undercroft-sim = { path = "crates/undercroft-sim" }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ron = "0.10"
+thiserror = "2"
+base64 = "0.22"
+rand = { version = "0.9", features = ["small_rng"] }
+
+# Bevy with a trimmed feature set: no glTF, scenes, animation, gamepads or picking.
+# `dynamic_linking` is added only by the app crate's `dev` feature (native builds).
+[workspace.dependencies.bevy]
+version = "0.19.1"
+default-features = false
+features = [
+  "std", "async_executor", "multi_threaded",
+  "bevy_log", "bevy_asset", "bevy_state", "bevy_color",
+  "bevy_window", "bevy_winit", "x11", "wayland",
+  "bevy_render", "bevy_core_pipeline", "bevy_pbr", "bevy_light",
+  "bevy_sprite", "bevy_ui", "bevy_ui_render", "bevy_text", "default_font",
+  "bevy_audio", "wav", "vorbis",
+  "png", "tonemapping_luts", "zstd_rust", "webgl2",
+]
+
+# Bevy book profile: our crates at opt-level 1, dependencies at 3, so Bevy itself is
+# compiled once optimised and our code stays fast to rebuild.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+opt-level = "s"     # size matters most for the wasm target; native can override
+strip = true

@@ -1,0 +1,17 @@
+[package]
+name = "undercroft"
+description = "The Undercroft: Bevy app (native and wasm)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+default = []
+# Native development only: link Bevy dynamically for fast rebuilds. Never on wasm.
+dev = ["bevy/dynamic_linking", "bevy/file_watcher"]
+
+[dependencies]
+undercroft-data = { workspace = true }
+undercroft-sim = { workspace = true }
+bevy = { workspace = true }

@@ -1,0 +1,490 @@
+{
+ "ok": true,
+ "errors": [],
+ "warnings": [],
+ "zones": {
+  "undercroft": {
+   "ok": true,
+   "errors": [],
+   "warnings": [],
+   "stats": {
+    "width": 62,
+    "height": 62,
+    "w": 0,
+    "h": 62,
+    "strict": true,
+    "S": 1,
+    "V": 0,
+    "A": 0,
+    "H": 1,
+    "N": 2,
+    "C": 2,
+    "X": 1,
+    "W": 0,
+    "o": 10,
+    "r": 8,
+    "R": 3,
+    "D": 672,
+    "P": 89,
+    "F": 0,
+    "=": 4,
+    "L": 0,
+    "G": 1,
+    "Y": 0,
+    "B": 1,
+    "walkable": 2401,
+    "walls": 1354,
+    "wallShare": 0.352,
+    "reachable": 3844,
+    "gatedCells": 134,
+    "shortcutOnlyCells": 0,
+    "behindGate": [
+     "rich@(7,2)",
+     "oil@(2,10)",
+     "npc@(4,5)"
+    ],
+    "shortcuts": [
+     {
+      "id": "u_navedoor",
+      "name": "The Nave Door",
+      "cells": [
+       [
+        37,
+        55
+       ],
+       [
+        37,
+        56
+       ]
+      ],
+      "openFrom": "E",
+      "saves": 74,
+      "detour": 74,
+      "dBarred": 8,
+      "dOpen": 72
+     },
+     {
+      "id": "u_wingstair",
+      "name": "The Wing Stair",
+      "cells": [
+       [
+        7,
+        36
+       ]
+      ],
+      "openFrom": "N",
+      "saves": 80,
+      "detour": 80,
+      "dBarred": 45,
+      "dOpen": 65
+     },
+     {
+      "id": "u_rood",
+      "name": "The Rood Door",
+      "cells": [
+       [
+        53,
+        36
+       ]
+      ],
+      "openFrom": "N",
+      "saves": 152,
+      "detour": 152,
+      "dBarred": 45,
+      "dOpen": 137
+     }
+    ],
+    "route": {
+     "closed": 952,
+     "open": 640
+    }
+   }
+  },
+  "cistern": {
+   "ok": true,
+   "errors": [],
+   "warnings": [],
+   "stats": {
+    "width": 64,
+    "height": 64,
+    "w": 1,
+    "h": 64,
+    "strict": true,
+    "S": 1,
+    "V": 0,
+    "A": 0,
+    "H": 2,
+    "N": 1,
+    "C": 2,
+    "X": 1,
+    "W": 1587,
+    "o": 7,
+    "r": 8,
+    "R": 4,
+    "D": 149,
+    "P": 52,
+    "F": 0,
+    "=": 4,
+    "L": 1,
+    "G": 0,
+    "Y": 0,
+    "B": 0,
+    "walkable": 2832,
+    "walls": 1212,
+    "wallShare": 0.296,
+    "reachable": 4096,
+    "gatedCells": 264,
+    "shortcutOnlyCells": 0,
+    "behindGate": [
+     "rich@(31,3)",
+     "rich@(39,9)"
+    ],
+    "shortcuts": [
+     {
+      "id": "c_bulkhead",
+      "name": "The West Bulkhead",
+      "cells": [
+       [
+        25,
+        52
+       ],
+       [
+        25,
+        53
+       ]
+      ],
+      "openFrom": "W",
+      "saves": 214,
+      "detour": 214,
+      "dBarred": 14,
+      "dOpen": 216
+     },
+     {
+      "id": "c_screen",
+      "name": "The East Screen",
+      "cells": [
+       [
+        40,
+        52
+       ]
+      ],
+      "openFrom": "E",
+      "saves": 144,
+      "detour": 144,
+      "dBarred": 15,
+      "dOpen": 147
+     },
+     {
+      "id": "c_sluice",
+      "name": "The Sluice Screen",
+      "cells": [
+       [
+        12,
+        45
+       ]
+      ],
+      "openFrom": "W",
+      "saves": 92,
+      "detour": 92,
+      "dBarred": 36,
+      "dOpen": 118
+     }
+    ],
+    "route": {
+     "closed": 1002,
+     "open": 678
+    }
+   }
+  },
+  "ossuary": {
+   "ok": true,
+   "errors": [],
+   "warnings": [],
+   "stats": {
+    "width": 62,
+    "height": 62,
+    "w": 0,
+    "h": 62,
+    "strict": true,
+    "S": 0,
+    "V": 1,
+    "A": 0,
+    "H": 1,
+    "N": 1,
+    "C": 2,
+    "X": 1,
+    "W": 0,
+    "o": 10,
+    "r": 11,
+    "R": 7,
+    "D": 729,
+    "P": 0,
+    "F": 0,
+    "=": 3,
+    "L": 0,
+    "G": 1,
+    "Y": 2,
+    "B": 0,
+    "walkable": 1407,
+    "walls": 2437,
+    "wallShare": 0.634,
+    "reachable": 3844,
+    "gatedCells": 54,
+    "shortcutOnlyCells": 0,
+    "behindGate": [
+     "rich@(19,4)",
+     "rich@(17,6)"
+    ],
+    "shortcuts": [
+     {
+      "id": "o_chute",
+      "name": "The Lime Chute",
+      "cells": [
+       [
+        7,
+        44
+       ]
+      ],
+      "openFrom": "N",
+      "saves": 158,
+      "detour": 158,
+      "dBarred": 13,
+      "dOpen": 171
+     },
+     {
+      "id": "o_stackdoor",
+      "name": "The Stacks Door",
+      "cells": [
+       [
+        47,
+        44
+       ]
+      ],
+      "openFrom": "N",
+      "saves": 288,
+      "detour": 288,
+      "dBarred": 61,
+      "dOpen": 329
+     },
+     {
+      "id": "o_rim",
+      "name": "The Wheel Rim",
+      "cells": [
+       [
+        22,
+        28
+       ]
+      ],
+      "openFrom": "N",
+      "saves": 92,
+      "detour": 92,
+      "dBarred": 144,
+      "dOpen": 236
+     }
+    ],
+    "route": {
+     "closed": 1082,
+     "open": 638
+    }
+   }
+  },
+  "source": {
+   "ok": true,
+   "errors": [],
+   "warnings": [],
+   "stats": {
+    "width": 60,
+    "height": 60,
+    "w": 0,
+    "h": 60,
+    "strict": true,
+    "S": 0,
+    "V": 1,
+    "A": 1,
+    "H": 2,
+    "N": 0,
+    "C": 0,
+    "X": 0,
+    "W": 0,
+    "o": 8,
+    "r": 3,
+    "R": 3,
+    "D": 1575,
+    "P": 0,
+    "F": 0,
+    "=": 3,
+    "L": 1,
+    "G": 0,
+    "Y": 1,
+    "B": 1,
+    "walkable": 2288,
+    "walls": 1312,
+    "wallShare": 0.364,
+    "reachable": 3600,
+    "gatedCells": 0,
+    "shortcutOnlyCells": 0,
+    "behindGate": [],
+    "shortcuts": [
+     {
+      "id": "s_fissure1",
+      "name": "The First Fissure",
+      "cells": [
+       [
+        5,
+        7
+       ]
+      ],
+      "openFrom": "E",
+      "saves": 354,
+      "detour": 354,
+      "dBarred": 7,
+      "dOpen": 351
+     },
+     {
+      "id": "s_fissure2",
+      "name": "The Second Fissure",
+      "cells": [
+       [
+        30,
+        49
+       ]
+      ],
+      "openFrom": "N",
+      "saves": 152,
+      "detour": 152,
+      "dBarred": 460,
+      "dOpen": 612
+     },
+     {
+      "id": "s_fissure3",
+      "name": "The Third Fissure",
+      "cells": [
+       [
+        30,
+        15
+       ]
+      ],
+      "openFrom": "S",
+      "saves": 112,
+      "detour": 112,
+      "dBarred": 682,
+      "dOpen": 794
+     }
+    ],
+    "route": {
+     "closed": 1926,
+     "open": 1086
+    },
+    "altarLap": 5,
+    "creatureLaps": [
+     {
+      "kind": "brute",
+      "cell": [
+       30,
+       23
+      ],
+      "lap": 4
+     },
+     {
+      "kind": "falseLight",
+      "cell": [
+       41,
+       26
+      ],
+      "lap": 3
+     },
+     {
+      "kind": "lampwight",
+      "cell": [
+       13,
+       30
+      ],
+      "lap": 2
+     }
+    ],
+    "hunterLaps": [
+     1,
+     3
+    ]
+   }
+  }
+ },
+ "hub": {
+  "ok": true,
+  "errors": [],
+  "warnings": [],
+  "stats": {
+   "width": 17,
+   "height": 9,
+   "w": 0,
+   "h": 9,
+   "strict": false,
+   "S": 1,
+   "V": 0,
+   "A": 0,
+   "H": 0,
+   "N": 0,
+   "C": 0,
+   "X": 0,
+   "W": 0,
+   "o": 0,
+   "r": 0,
+   "R": 0,
+   "D": 0,
+   "P": 0,
+   "F": 1,
+   "=": 0,
+   "L": 0,
+   "G": 0,
+   "Y": 0,
+   "B": 0,
+   "walkable": 77,
+   "walls": 76,
+   "wallShare": 0.497,
+   "reachable": 153,
+   "gatedCells": 0,
+   "shortcutOnlyCells": 0,
+   "behindGate": [],
+   "shortcuts": []
+  }
+ },
+ "hubV2": {
+  "ok": true,
+  "errors": [],
+  "warnings": [],
+  "stats": {
+   "width": 25,
+   "height": 13,
+   "w": 0,
+   "h": 13,
+   "strict": false,
+   "S": 1,
+   "V": 0,
+   "A": 0,
+   "H": 0,
+   "N": 0,
+   "C": 0,
+   "X": 0,
+   "W": 0,
+   "o": 0,
+   "r": 0,
+   "R": 0,
+   "D": 0,
+   "P": 0,
+   "F": 1,
+   "=": 0,
+   "L": 0,
+   "G": 0,
+   "Y": 0,
+   "B": 0,
+   "walkable": 201,
+   "walls": 124,
+   "wallShare": 0.382,
+   "reachable": 325,
+   "gatedCells": 0,
+   "shortcutOnlyCells": 0,
+   "behindGate": [],
+   "shortcuts": []
+  }
+ }
+}

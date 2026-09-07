@@ -1,0 +1,11 @@
+[target.x86_64-unknown-linux-gnu]
+linker = "clang"
+rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+
+[target.wasm32-unknown-unknown]
+runner = "wasm-server-runner"
+
+# The sandbox VM has 3 GB RAM + 1.7 GB swap; four parallel rustc jobs on Bevy's
+# larger crates push past that. Raise (or delete) this once the VM has 8 GB.
+[build]
+jobs = 2
