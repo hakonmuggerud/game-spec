@@ -7,7 +7,7 @@
 //!
 //! | Lane | Modules |
 //! |---|---|
-//! | world | [`pool`], [`collision`], [`validate`] |
+//! | world | [`pool`], [`collision`], [`validate`], [`world`] |
 //! | creatures | [`creature`] (`creature/mod.rs` and its submodules) |
 //! | economy | [`contracts`], [`follower`], [`economy`], [`save`] |
 //!
@@ -27,6 +27,7 @@ pub mod pool;
 pub mod rng;
 pub mod save;
 pub mod validate;
+pub mod world;
 
 pub use events::SimEvent;
 pub use grid::Field;

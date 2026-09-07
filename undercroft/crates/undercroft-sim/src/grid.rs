@@ -83,10 +83,18 @@ pub fn center_of(m: &ParsedMap, i: usize) -> (f32, f32) {
     center(m, cx, cz)
 }
 
-/// `maps.js:dist2d` — `Math.hypot`.
+/// `maps.js:dist2d` — `Math.hypot`, narrowed to `f32`. Use [`dist2d_f64`] when the result is compared against
+/// a threshold: the narrowing can round a distance a hair above the radius down onto it.
 #[inline]
 pub fn dist2d(ax: f32, az: f32, bx: f32, bz: f32) -> f32 {
-    ((ax as f64 - bx as f64).hypot(az as f64 - bz as f64)) as f32
+    dist2d_f64(ax, az, bx, bz) as f32
+}
+
+/// `maps.js:dist2d` in the JS's own precision — `Math.hypot` over the `f64` promotions of the inputs, with no
+/// narrowing. Threshold tests (`dist2d(...) <= r`) must use this so the boundary matches the prototype.
+#[inline]
+pub fn dist2d_f64(ax: f32, az: f32, bx: f32, bz: f32) -> f64 {
+    (ax as f64 - bx as f64).hypot(az as f64 - bz as f64)
 }
 
 /// A BFS distance / parent field (`maps.js:bfsField`): `dist[i]` in cells, −1 unreachable; `parent[i]` the

@@ -359,6 +359,26 @@ pub fn toggle_lamp(lamp: &mut LampState, in_zone: bool) -> (bool, Vec<SimEvent>)
     (true, vec![SimEvent::LampToggle { on: lamp.lamp_on }])
 }
 
+/// `main.js` `events.on('lampSnuffed')` — the Lampwight's touch (DESIGN.md §5.1): in a zone the lamp goes out,
+/// `oil` (default `CREATURE.lampwight.oil`) burns off and the wick stays cold for `lockout` seconds (default
+/// `CREATURE.lampwight.lockout`, never shortening a longer lockout already running). Apply it to the
+/// `SimEvent::LampSnuffed { oil, lockout }` payload the creature lane emits; ignored outside ZONE mode.
+pub fn on_lamp_snuffed(
+    lamp: &mut LampState,
+    cfg: &Config,
+    oil: Option<f32>,
+    lockout: Option<f32>,
+    in_zone: bool,
+) {
+    if !in_zone {
+        return;
+    }
+    let lw = &cfg.creature.lampwight;
+    lamp.lamp_on = false;
+    lamp.oil = (lamp.oil - oil.unwrap_or(lw.oil)).max(0.0);
+    lamp.lamp_lock = lamp.lamp_lock.max(lockout.unwrap_or(lw.lockout));
+}
+
 /// `main.js:topUp()` — T: one carried flask → `+flaskOil` lamp oil (capped at `oilMax`).
 pub fn top_up(
     lamp: &mut LampState,
@@ -774,6 +794,50 @@ Services (hub.js upgradeLightTech / pressRelics / deepenReservoir / toggleBlessi
 
 const ROMAN: [&str; 5] = ["none", "I", "II", "III", "IV"];
 
+/// `hub.js` `events.on('npcRescued')` — the guidance toast when a rescued NPC's building is still unbuilt:
+/// `"<NPC> could raise a <Building> at the Lantern."` (the first `BUILD_ORDER` entry whose `npc` is `id`).
+/// The `refreshBuildings()` it also runs is presentation (the ghost appears) and never toasts for NPC buildings.
+pub fn on_npc_rescued_hub(data: &GameData, save: &SaveData, id: &str) -> Vec<SimEvent> {
+    let b = data
+        .buildings
+        .order
+        .iter()
+        .filter_map(|k| data.buildings.buildings.get(k))
+        .find(|b| b.npc.as_deref() == Some(id));
+    match b {
+        Some(b) if !save.buildings.get(&b.id) => vec![SimEvent::toast(format!(
+            "{} could raise a {} at the Lantern.",
+            npc_name(data, id),
+            b.name
+        ))],
+        _ => vec![],
+    }
+}
+
+/// `hub.js:refreshBuildings(quiet = false)` on a non-initial `flameTier {tier, prev}`: every tier-gated building
+/// (`BUILDINGS[id].tier`) whose ghost first appears with this tier — `prev < tier_needed ≤ tier` and not built —
+/// toasts `"The flame is strong enough for a <name> (<cost>)."`, in `BUILD_ORDER`. Call it only when the event's
+/// `initial` is false (`hubEnter` and the init announcement refresh quietly).
+pub fn on_flame_tier_hub(data: &GameData, save: &SaveData, prev: u32, tier: u32) -> Vec<SimEvent> {
+    let mut out = Vec::new();
+    for id in &data.buildings.order {
+        let Some(b) = data.buildings.buildings.get(id) else {
+            continue;
+        };
+        let Some(t) = b.tier else {
+            continue;
+        };
+        if prev < t && t <= tier && !is_built(data, save, id) {
+            out.push(SimEvent::toast(format!(
+                "The flame is strong enough for a {} ({}).",
+                b.name,
+                cost_text(cost_of(&data.config, id))
+            )));
+        }
+    }
+    out
+}
+
 /// `hub.js:upgradeLightTech()` — Workshop: buy the next `LIGHT_TECH` row for relics (+ rich at III).
 pub fn upgrade_light_tech(
     data: &GameData,
@@ -1086,6 +1150,181 @@ pub fn hub_hud_text(data: &GameData, save: &SaveData) -> String {
 }
 
 /* ============================================================
+Hub interaction (hub.js interactTarget)
+============================================================ */
+
+/// What E does in the hub (`hub.js:interactTarget`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HubInteract {
+    /// A ghost: `[E] Build <name> — <cost>` (`openBuilding`).
+    Build { id: String, label: String },
+    /// A built building: `[E] <name>` (`openBuilding`).
+    Building { id: String, label: String },
+    /// The hub stairs: `[E] Descend — <zone>` plus ` (locked: <reason>)` when the selected zone is locked
+    /// (`main.js` runs `descend()`).
+    Descend {
+        zone_id: String,
+        label: String,
+        lock: Option<String>,
+    },
+}
+
+/// `hub.js:interactTarget(ctx)` — the nearest visible (ghost or built) building whose anchor centre is strictly
+/// within `HUB_CFG.interactR` (1.8) of the player, walking `BUILD_ORDER` so the first wins ties; otherwise the hub
+/// stairs within `CFG.interactR` (1.6, inclusive) → `Descend` for the selected zone. `m` is the parsed hub map
+/// (anchor digits with `HUB_OX` applied); a building whose anchor digit is missing from the map is skipped.
+pub fn hub_interact_target(
+    data: &GameData,
+    save: &SaveData,
+    hub: &HubState,
+    m: &ParsedMap,
+    px: f32,
+    pz: f32,
+) -> Option<HubInteract> {
+    let mut best: Option<&str> = None;
+    let mut bd = data.config.hub_cfg.interact_r as f64;
+    for id in &data.buildings.order {
+        let Some(b) = data.buildings.buildings.get(id) else {
+            continue;
+        };
+        if !is_built(data, save, id) && !unlocked(data, save, hub.tier, id) {
+            continue; // state 'none': no mesh to look at
+        }
+        let Some(a) = b.anchor.parse::<u8>().ok().and_then(|d| m.anchors.get(&d)) else {
+            continue;
+        };
+        let d = grid::dist2d_f64(a.x, a.z, px, pz);
+        if d < bd {
+            best = Some(id);
+            bd = d;
+        }
+    }
+    if let Some(id) = best {
+        let b = &data.buildings.buildings[id];
+        return Some(if is_built(data, save, id) {
+            HubInteract::Building {
+                id: id.to_string(),
+                label: format!("[E] {}", b.name),
+            }
+        } else {
+            HubInteract::Build {
+                id: id.to_string(),
+                label: format!(
+                    "[E] Build {} — {}",
+                    b.name,
+                    cost_text(cost_of(&data.config, id))
+                ),
+            }
+        });
+    }
+    let st = m.stairs?;
+    if grid::dist2d_f64(st.marker.x, st.marker.z, px, pz) > data.config.cfg.interact_r as f64 {
+        return None;
+    }
+    let zid = selected(data, save);
+    let lock = zone_locked(data, save, hub.tier, zid);
+    let label = format!(
+        "[E] Descend — {}{}",
+        zone_name(data, zid),
+        lock.as_deref()
+            .map(|l| format!(" (locked: {l})"))
+            .unwrap_or_default()
+    );
+    Some(HubInteract::Descend {
+        zone_id: zid.to_string(),
+        label,
+        lock,
+    })
+}
+
+/* ============================================================
+Exploration (hub.js exploreTick / exploredPct — the Cartographer's Table)
+============================================================ */
+
+/// `hub.js:exploreTick()` — every `HUB_CFG.exploreTick` seconds in an unpaused zone: mark every non-solid cell
+/// within `r` of the player that the player has line of sight to (the player's own cell needs none), plus every
+/// solid N8 neighbour of a marked cell. `r` is `min(exploreMaxR, lamp reach)` with the lamp on, `exploreDarkR`
+/// otherwise; `lamp_reach` is the handlamp light's `distance`. `bits` is the zone's explored bitset
+/// (`SaveData::explored_bits`). Returns true when a new bit was set (`exploredDirty`).
+pub fn explore_tick(
+    cfg: &Config,
+    m: &ParsedMap,
+    bits: &mut [u8],
+    px: f32,
+    pz: f32,
+    lamp_on: bool,
+    lamp_reach: f32,
+) -> bool {
+    let hc = &cfg.hub_cfg;
+    let r = if lamp_on {
+        lamp_reach.min(hc.explore_max_r)
+    } else {
+        hc.explore_dark_r
+    };
+    let (pcx, pcz) = grid::to_cell(m, px, pz);
+    let rc = r.ceil() as i32;
+    let mut dirty = false;
+    let mut mark = |cx: i32, cz: i32| {
+        if grid::in_bounds(m, cx, cz) && crate::save::mark_bit(bits, grid::idx(m, cx, cz)) {
+            dirty = true;
+        }
+    };
+    for cz in pcz - rc..=pcz + rc {
+        for cx in pcx - rc..=pcx + rc {
+            if !grid::in_bounds(m, cx, cz) || grid::is_solid(m, cx, cz) {
+                continue;
+            }
+            let (x, z) = grid::center(m, cx, cz);
+            if grid::dist2d_f64(x, z, px, pz) > r as f64 {
+                continue;
+            }
+            if !(cx == pcx && cz == pcz) && !grid::los(m, px, pz, x, z) {
+                continue;
+            }
+            mark(cx, cz);
+            for (dx, dz) in N8 {
+                if grid::is_solid(m, cx + dx, cz + dz) {
+                    mark(cx + dx, cz + dz);
+                }
+            }
+        }
+    }
+    dirty
+}
+
+/// `hub.js` `N8` — the eight neighbours, in its order.
+const N8: [(i32, i32); 8] = [
+    (1, 0),
+    (-1, 0),
+    (0, 1),
+    (0, -1),
+    (1, 1),
+    (1, -1),
+    (-1, 1),
+    (-1, -1),
+];
+
+/// `hub.js:exploredPct(zoneId)` — the percentage of non-wall cells seen, rounded (pillars, gates and doors count
+/// as cells to see, as in the JS `!== T.WALL`). 0 for a map with no such cells.
+pub fn explored_pct(m: &ParsedMap, bits: &[u8]) -> u32 {
+    let mut walkable = 0u32;
+    let mut seen = 0u32;
+    for (i, &c) in m.cells.iter().enumerate() {
+        if c == CellKind::Wall {
+            continue;
+        }
+        walkable += 1;
+        if crate::save::bit_set(bits, i) {
+            seen += 1;
+        }
+    }
+    if walkable == 0 {
+        return 0;
+    }
+    (100.0 * seen as f64 / walkable as f64).round() as u32
+}
+
+/* ============================================================
 Endgame (endgame.js) — endings
 ============================================================ */
 
@@ -1303,7 +1542,8 @@ pub fn choose_ending(
 }
 
 /// `endgame.js:continueToHub()` — "Click to continue": the loot is discarded, `zoneExit`, then (after the
-/// shell's `enterHub`) `endingContinue {id}`. Returns the ending id so the shell can begin the `night` visit.
+/// shell's `enterHub`) the `night` visit's toast when the ending is `night`, and `endingContinue {id}`. Returns
+/// the ending id so the shell can dim the flame for the `night` visit.
 pub fn continue_to_hub(
     scr: &mut EndingScreen,
     carried: &mut Carried,
@@ -1315,16 +1555,22 @@ pub fn continue_to_hub(
     let id = scr.current.take().unwrap_or_default();
     scr.screen = None;
     *carried = Carried::default();
-    (
-        Some(id.clone()),
-        vec![
-            SimEvent::ZoneExit {
-                zone_id: zone_id.to_string(),
-            },
-            SimEvent::EndingContinue { id },
-            SimEvent::UiClick,
-        ],
-    )
+    let mut ev = vec![SimEvent::ZoneExit {
+        zone_id: zone_id.to_string(),
+    }];
+    if id == "night" {
+        ev.extend(begin_night_visit());
+    }
+    ev.push(SimEvent::EndingContinue { id: id.clone() });
+    ev.push(SimEvent::UiClick);
+    (Some(id), ev)
+}
+
+/// `endgame.js:beginNightVisit()` — the `night` ending's hub visit: the great flame reads as tier 1 (a shell
+/// concern) and the one textual cue, `"The Lantern gutters. Only embers remain."`. [`continue_to_hub`] already
+/// includes it after `zoneExit` (the JS runs it right after `enterHub`, before `endingContinue`).
+pub fn begin_night_visit() -> Vec<SimEvent> {
+    vec![SimEvent::toast("The Lantern gutters. Only embers remain.")]
 }
 
 /* ============================================================
@@ -1336,6 +1582,8 @@ Endgame — the Source run: ride up, laps, staged hunters
 pub struct Dormant {
     pub id: u32,
     pub wake_lap: i32,
+    /// Profile `base` / `fast`: once woken it counts toward `ENDGAME.maxHunters` (creatures never do).
+    pub counts_toward_max: bool,
 }
 
 /// An extra hunter to spawn (`endgame.js:spawnExtraHunter`) — the creature lane creates the record and the shell
@@ -1364,16 +1612,25 @@ pub struct SourceRun {
 }
 
 /// `endgame.js:startRun()` — hunters that spawn deep start dormant and wake as the player closes in: a hunter
-/// at lap `L` sleeps when `L − wakeLapAhead > 0`. `hunters` = `(id, x, z)` of the active hunters; the returned
-/// run lists the ids the shell must deactivate (`h.active = false`, mesh hidden).
-pub fn start_source_run(cfg: &Config, map: &ParsedMap, hunters: &[(u32, f32, f32)]) -> SourceRun {
+/// at lap `L` sleeps when `L − wakeLapAhead > 0`. `hunters` = `(id, x, z, profile)` of the active hunters
+/// (creatures included); the returned run lists the ids the shell must deactivate (`h.active = false`, mesh
+/// hidden).
+pub fn start_source_run(
+    cfg: &Config,
+    map: &ParsedMap,
+    hunters: &[(u32, f32, f32, &str)],
+) -> SourceRun {
     let mut run = SourceRun::default();
-    for &(id, x, z) in hunters {
+    for &(id, x, z, profile) in hunters {
         let (cx, cz) = grid::to_cell(map, x, z);
         let lap = grid::lap_of_map(map, cx, cz);
         let wake_lap = lap - cfg.endgame.wake_lap_ahead;
         if wake_lap > 0 {
-            run.dormant.push(Dormant { id, wake_lap });
+            run.dormant.push(Dormant {
+                id,
+                wake_lap,
+                counts_toward_max: profile == "base" || profile == "fast",
+            });
         }
     }
     run
@@ -1428,7 +1685,9 @@ pub fn lap_tint(cfg: &Config, v_lap: f32) -> (f32, f32, f32) {
 
 /// `endgame.js:onDeeper(lap, prev)` — `lap {lap, prev, zoneId}`, the `LAP_LINES` toast (once per lap), the
 /// dormant hunters whose `wakeLap ≤ lap` (`hunterWoken`), and on each of `extraLaps` one extra fast hunter
-/// 12–34 BFS cells from the player unless `active_base_fast ≥ maxHunters` (creatures are not counted).
+/// 12–34 BFS cells from the player unless the active base/fast count has reached `maxHunters` (creatures are
+/// not counted). `active_base_fast` is that count *before* this call — earlier extras included, dormant hunters
+/// excluded; the JS recounts `ctx.hunters` after waking, so hunters woken here are added to it.
 #[allow(clippy::too_many_arguments)]
 pub fn on_deeper(
     data: &GameData,
@@ -1454,6 +1713,7 @@ pub fn on_deeper(
             out.events.push(SimEvent::toast(line.clone()));
         }
     }
+    let mut active = active_base_fast;
     let mut i = 0;
     while i < run.dormant.len() {
         if lap < run.dormant[i].wake_lap {
@@ -1463,8 +1723,10 @@ pub fn on_deeper(
         let d = run.dormant.remove(i);
         out.woken.push(d.id);
         out.events.push(SimEvent::HunterWoken { id: d.id, lap });
+        if d.counts_toward_max {
+            active += 1;
+        }
     }
-    let mut active = active_base_fast;
     for &l in &cfg.endgame.extra_laps {
         if lap < l || run.spawned_laps.contains(&l) {
             continue;
@@ -2436,7 +2698,15 @@ mod tests {
         let (id, ev) = continue_to_hub(&mut scr, &mut carried, "source");
         assert_eq!(id.as_deref(), Some("night"));
         assert!(carried.is_empty() && scr.screen.is_none());
-        assert_eq!(names(&ev), vec!["zoneExit", "endingContinue", "uiClick"]);
+        assert_eq!(
+            names(&ev),
+            vec!["zoneExit", "toast", "endingContinue", "uiClick"]
+        );
+        assert_eq!(
+            ev[1],
+            SimEvent::toast("The Lantern gutters. Only embers remain.")
+        );
+        assert_eq!(begin_night_visit(), vec![ev[1].clone()]);
         assert_eq!(endings_hud_line(&save, true), "Endings: ✧✧✦");
         assert_eq!(endings_hud_line(&save, false), "");
         assert_eq!(endings_hud_line(&SaveData::default(), true), "");
@@ -2453,16 +2723,17 @@ mod tests {
         let zone = d.zone("source").unwrap();
         let map = d.parse_zone("source").unwrap().unwrap();
         // the mapped hunters, as the creature lane would list them
-        let hunters: Vec<(u32, f32, f32)> = map
+        let hunters: Vec<(u32, f32, f32, &str)> = map
             .hunter_spawns
             .iter()
+            .zip(zone.hunter_profile_names(cfg))
             .enumerate()
-            .map(|(i, h)| (i as u32, h.x, h.z))
+            .map(|(i, (h, prof))| (i as u32, h.x, h.z, prof))
             .collect();
         let mut run = start_source_run(cfg, &map, &hunters);
         let deep: Vec<i32> = hunters
             .iter()
-            .map(|&(_, x, z)| {
+            .map(|&(_, x, z, _)| {
                 let (cx, cz) = grid::to_cell(&map, x, z);
                 grid::lap_of_map(&map, cx, cz)
             })
@@ -2471,9 +2742,10 @@ mod tests {
             .iter()
             .zip(&deep)
             .filter(|(_, &l)| l - cfg.endgame.wake_lap_ahead > 0)
-            .map(|(&(id, _, _), &l)| Dormant {
+            .map(|(&(id, _, _, _), &l)| Dormant {
                 id,
                 wake_lap: l - cfg.endgame.wake_lap_ahead,
+                counts_toward_max: true,
             })
             .collect();
         assert_eq!(run.dormant, expect);
@@ -2499,6 +2771,8 @@ mod tests {
         for lap in 1..=5 {
             let crossed = update_source_run(&mut run, cfg, 0.1, true, lap);
             assert_eq!(crossed, Some((lap, lap - 1)));
+            // the base/fast hunters active before this lap: everything woken or spawned so far
+            let active = (woken.len() + total_spawn) as u32;
             let out = on_deeper(
                 &d,
                 &mut run,
@@ -2507,7 +2781,7 @@ mod tests {
                 "source",
                 &map,
                 on_lap(lap),
-                2,
+                active,
                 &mut rng,
             );
             assert_eq!(
@@ -2547,6 +2821,55 @@ mod tests {
         let out = on_deeper(&d, &mut fresh, 3, 2, "source", &map, (ex, ez), 4, &mut rng);
         assert!(out.spawn.is_empty(), "maxHunters reached: none");
         assert_eq!(fresh.spawned_laps, vec![3]);
+        // a hunter woken in the same call counts toward maxHunters (the JS recounts after waking) …
+        let mut staged = SourceRun {
+            dormant: vec![Dormant {
+                id: 9,
+                wake_lap: 3,
+                counts_toward_max: true,
+            }],
+            ..Default::default()
+        };
+        let out = on_deeper(
+            &d,
+            &mut staged,
+            3,
+            2,
+            "source",
+            &map,
+            on_lap(3),
+            3,
+            &mut rng,
+        );
+        assert_eq!(out.woken, vec![9]);
+        assert!(
+            out.spawn.is_empty(),
+            "3 active + the woken hunter = maxHunters"
+        );
+        // … but a woken creature does not
+        let mut staged = SourceRun {
+            dormant: vec![Dormant {
+                id: 9,
+                wake_lap: 3,
+                counts_toward_max: false,
+            }],
+            ..Default::default()
+        };
+        let out = on_deeper(
+            &d,
+            &mut staged,
+            3,
+            2,
+            "source",
+            &map,
+            on_lap(3),
+            3,
+            &mut rng,
+        );
+        assert_eq!(out.woken, vec![9]);
+        assert_eq!(out.spawn.len(), 1);
+        let creature_run = start_source_run(cfg, &map, &[(7, ex, ez, "warden")]);
+        assert!(creature_run.dormant.iter().all(|d| !d.counts_toward_max));
         // the spawn window: 12–34 BFS cells, this lap or the next, floor/deep
         let f = grid::bfs_solid(&map, entry[0], entry[1]);
         let cell =
@@ -2620,5 +2943,210 @@ mod tests {
         assert_eq!(run.ride_confirm_t, 0.0);
         let (_, ev) = ride_up(cfg, &mut run, &mut carried, true, "source");
         assert_eq!(names(&ev), vec!["toast", "uiError"], "armed again, not out");
+    }
+
+    #[test]
+    fn lamp_snuff_burns_oil_and_locks_the_wick() {
+        let d = data();
+        let cfg = &d.config;
+        let mut lamp = LampState {
+            oil: 20.0,
+            lamp_on: true,
+            ..Default::default()
+        };
+        // hub: nothing happens
+        on_lamp_snuffed(&mut lamp, cfg, None, None, false);
+        assert!(lamp.lamp_on && lamp.oil == 20.0 && lamp.lamp_lock == 0.0);
+        on_lamp_snuffed(&mut lamp, cfg, None, None, true);
+        assert!(!lamp.lamp_on);
+        assert_eq!(lamp.oil, 8.0);
+        assert_eq!(lamp.lamp_lock, 2.0);
+        let (ok, ev) = toggle_lamp(&mut lamp, true);
+        assert!(!ok);
+        assert_eq!(
+            ev,
+            vec![SimEvent::toast("The wick is cold"), SimEvent::ui_error()]
+        );
+        // the payload overrides the defaults; a shorter lockout never shortens the running one; oil floors at 0
+        on_lamp_snuffed(&mut lamp, cfg, Some(10.0), Some(1.0), true);
+        assert_eq!(lamp.oil, 0.0);
+        assert_eq!(lamp.lamp_lock, 2.0);
+        lamp.lamp_lock = 0.0;
+        lamp.oil = 5.0;
+        on_lamp_snuffed(&mut lamp, cfg, Some(1.0), Some(3.5), true);
+        assert_eq!((lamp.oil, lamp.lamp_lock), (4.0, 3.5));
+    }
+
+    #[test]
+    fn hub_guidance_toasts() {
+        let d = data();
+        let mut save = SaveData::default();
+        assert_eq!(
+            on_npc_rescued_hub(&d, &save, "lamplighter"),
+            vec![SimEvent::toast(
+                "Wick the Lamplighter could raise a Workshop at the Lantern."
+            )]
+        );
+        save.buildings.workshop = true;
+        assert!(on_npc_rescued_hub(&d, &save, "lamplighter").is_empty());
+        assert!(on_npc_rescued_hub(&d, &save, "nobody").is_empty());
+        // tier-gated ghosts announce themselves once, with their cost, in BUILD_ORDER
+        assert_eq!(
+            on_flame_tier_hub(&d, &save, 1, 2),
+            vec![SimEvent::toast(
+                "The flame is strong enough for a Tram dock (120 oil)."
+            )]
+        );
+        assert_eq!(
+            on_flame_tier_hub(&d, &save, 1, 3),
+            vec![
+                SimEvent::toast("The flame is strong enough for a Tram dock (120 oil)."),
+                SimEvent::toast("The flame is strong enough for a Elevator (250 oil + 4 relics).")
+            ]
+        );
+        assert_eq!(
+            on_flame_tier_hub(&d, &save, 2, 3),
+            vec![SimEvent::toast(
+                "The flame is strong enough for a Elevator (250 oil + 4 relics)."
+            )]
+        );
+        assert!(on_flame_tier_hub(&d, &save, 2, 2).is_empty());
+        save.buildings.tram = true;
+        assert!(
+            on_flame_tier_hub(&d, &save, 1, 2).is_empty(),
+            "already built"
+        );
+    }
+
+    #[test]
+    fn hub_interact_target_reach_rules() {
+        let d = data();
+        let m = d.parse_hub().expect("hub");
+        let mut save = SaveData::default();
+        let hub = HubState::default();
+        // the board (anchor 5 → (75.5, 9.5)) is always built: strictly inside 1.8
+        assert_eq!(
+            hub_interact_target(&d, &save, &hub, &m, 74.0, 9.5),
+            Some(HubInteract::Building {
+                id: "board".into(),
+                label: "[E] Departure Board".into()
+            })
+        );
+        assert_eq!(
+            hub_interact_target(&d, &save, &hub, &m, 73.7, 9.5),
+            None,
+            "1.8 is not < 1.8, and the stairs are out of reach"
+        );
+        // the stairs (S → (70.5, 10.5)) within CFG.interactR 1.6, inclusive
+        assert_eq!(
+            hub_interact_target(&d, &save, &hub, &m, 69.0, 10.5),
+            Some(HubInteract::Descend {
+                zone_id: "undercroft".into(),
+                label: "[E] Descend — The Undercroft".into(),
+                lock: None
+            })
+        );
+        assert_eq!(hub_interact_target(&d, &save, &hub, &m, 68.8, 10.5), None);
+        save.zone_selected = "cistern".into();
+        assert_eq!(
+            hub_interact_target(&d, &save, &hub, &m, 70.5, 10.5),
+            Some(HubInteract::Descend {
+                zone_id: "cistern".into(),
+                label: "[E] Descend — The Cistern (locked: Needs the Tram dock)".into(),
+                lock: Some("Needs the Tram dock".into())
+            })
+        );
+        // the workshop (anchor 1 → (63.5, 1.5)) is 'none' until Wick is rescued, then a ghost, then built
+        assert_eq!(hub_interact_target(&d, &save, &hub, &m, 63.5, 1.5), None);
+        save.rescued.lamplighter = true;
+        assert_eq!(
+            hub_interact_target(&d, &save, &hub, &m, 63.5, 1.5),
+            Some(HubInteract::Build {
+                id: "workshop".into(),
+                label: "[E] Build Workshop — 6 relics".into()
+            })
+        );
+        save.buildings.workshop = true;
+        assert_eq!(
+            hub_interact_target(&d, &save, &hub, &m, 63.5, 1.5),
+            Some(HubInteract::Building {
+                id: "workshop".into(),
+                label: "[E] Workshop".into()
+            })
+        );
+        // the tram ghost (anchor 6 → (62.5, 9.5)) needs tier 2
+        assert_eq!(hub_interact_target(&d, &save, &hub, &m, 62.5, 9.5), None);
+        let hub2 = HubState {
+            tier: 2,
+            blessed: false,
+        };
+        assert!(matches!(
+            hub_interact_target(&d, &save, &hub2, &m, 62.5, 9.5),
+            Some(HubInteract::Build { id, .. }) if id == "tram"
+        ));
+    }
+
+    #[test]
+    fn explore_tick_marks_lit_cells_and_their_walls() {
+        use crate::save::bit_set;
+        use undercroft_data::map::parse_map;
+        let d = data();
+        let cfg = &d.config;
+        let rows: Vec<String> = ["#####", "#...#", "#.P.#", "#...#", "#####"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let m = parse_map(&rows, 0, "t", None, None).expect("parse");
+        let mut bits = SaveData::default().explored_bits("t", m.len());
+        assert_eq!(explored_pct(&m, &bits), 0);
+        // dark at (1,1): radius 2 → (1,1) (2,1) (3,1) (1,2) (1,3), the pillar and 13 walls around them
+        assert!(explore_tick(cfg, &m, &mut bits, 1.5, 1.5, false, 16.0));
+        let expect = [
+            (1, 1),
+            (2, 1),
+            (3, 1),
+            (1, 2),
+            (1, 3),
+            (2, 2),
+            (0, 0),
+            (1, 0),
+            (2, 0),
+            (3, 0),
+            (4, 0),
+            (0, 1),
+            (4, 1),
+            (0, 2),
+            (4, 2),
+            (0, 3),
+            (0, 4),
+            (1, 4),
+            (2, 4),
+        ];
+        for cz in 0..5 {
+            for cx in 0..5 {
+                assert_eq!(
+                    bit_set(&bits, m.idx(cx, cz)),
+                    expect.contains(&(cx, cz)),
+                    "cell ({cx},{cz})"
+                );
+            }
+        }
+        // 6 of the 9 non-wall cells (8 floor + the pillar)
+        assert_eq!(explored_pct(&m, &bits), 67);
+        // lamp on but the pillar blocks the diagonal cells: nothing new
+        assert!(!explore_tick(cfg, &m, &mut bits, 1.5, 1.5, true, 2.3));
+        assert!(!bit_set(&bits, m.idx(3, 2)) && !bit_set(&bits, m.idx(3, 3)));
+        // from the opposite corner everything is seen
+        assert!(explore_tick(cfg, &m, &mut bits, 3.5, 3.5, false, 16.0));
+        assert_eq!(explored_pct(&m, &bits), 100);
+        assert!(bit_set(&bits, m.idx(4, 4)), "the corner wall beside (3,3)");
+        // the bitset round-trips through the save
+        let mut save = SaveData::default();
+        save.set_explored_bits("t", &bits);
+        assert_eq!(save.explored_bits("t", m.len()), bits);
+        // a lit lamp reaches min(exploreMaxR, reach); out of the grid nothing is marked
+        let mut none = vec![0u8; bits.len()];
+        assert!(!explore_tick(cfg, &m, &mut none, -9.0, -9.0, true, 1.0));
+        assert!(none.iter().all(|&b| b == 0));
     }
 }

@@ -310,6 +310,14 @@ mod tests {
         assert_eq!(u.shortcuts.len(), 3);
         assert_eq!(u.anchor("entry"), Some([31, 58]));
         assert_eq!(u.anchor("shortcuts.u_rood"), Some([53, 36]));
+        // maps.js:speeds — an unknown profile name resolves to `base`
+        assert_eq!(
+            u.hunter_profile_names(&d.config),
+            u.hunters.iter().map(String::as_str).collect::<Vec<_>>()
+        );
+        let mut typo = u.clone();
+        typo.hunters = vec!["fast".into(), "fastt".into()];
+        assert_eq!(typo.hunter_profile_names(&d.config), vec!["fast", "base"]);
         assert_eq!(u.npcs["deacon"], [4, 5]);
         assert_eq!(u.loot.oil, 10);
         assert!(u.requires.is_none());

@@ -4,6 +4,7 @@
 //! `GameData::from_dir` (`ZoneDef::rows`).
 
 use crate::cell::CreatureKind;
+use crate::config::Config;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -281,10 +282,21 @@ impl ZoneDef {
         all
     }
 
-    /// `maps.js:ZONES[id].hunterSpeeds` — the `(profile name, speed table)` per `H` is derived from
-    /// `Config::hunter_profiles`; this is the profile name list with the JS fallback to `base`.
-    pub fn hunter_profile_names(&self) -> Vec<&str> {
-        self.hunters.iter().map(String::as_str).collect()
+    /// `maps.js:ZONES[id].hunterSpeeds` (`maps.js:speeds`) — one profile name per `H`, row-major, with a name
+    /// missing from `Config::hunter_profiles` resolved to `base` as `HUNTER_PROFILES[n] || HUNTER_PROFILES.base`
+    /// does for the speed table. (The JS keeps the raw string in `profile` and would fail in `hunter.js:profile`
+    /// on it; the whole profile falls back here so a typo in a zone file degrades to a base hunter.)
+    pub fn hunter_profile_names<'a>(&'a self, config: &'a Config) -> Vec<&'a str> {
+        self.hunters
+            .iter()
+            .map(|n| {
+                if config.hunter_profiles.contains_key(n) {
+                    n.as_str()
+                } else {
+                    "base"
+                }
+            })
+            .collect()
     }
 }
 

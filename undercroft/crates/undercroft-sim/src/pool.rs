@@ -8,7 +8,7 @@
 //! not the bitmap. Everything here is pure: the bitmap is recomputed from the lantern list on `lantern` /
 //! `lanternRemoved` / `zoneEnter` (`hunter.js` lines 30–34), never patched incrementally.
 
-use crate::grid::{center, dist2d, idx, in_bounds, to_cell};
+use crate::grid::{center, dist2d_f64, idx, in_bounds, to_cell};
 use undercroft_data::ParsedMap;
 
 /// The lantern-pool bitmap: one byte per cell, 1 inside a planted lantern's pool (`map.pool` in `maps.js`).
@@ -50,7 +50,8 @@ impl Pool {
                         continue;
                     }
                     let (px, pz) = center(m, cx, cz);
-                    if dist2d(px, pz, l.x, l.z) <= pool_r {
+                    // compared in f64 like the JS: narrowing first would pull a hair-over distance onto the radius
+                    if dist2d_f64(px, pz, l.x, l.z) <= pool_r as f64 {
                         self.mask[idx(m, cx, cz)] = 1;
                     }
                 }
@@ -97,27 +98,31 @@ pub fn recompute(m: &ParsedMap, lanterns: &[Lantern], pool_r: f32) -> Pool {
 /// of any planted lantern? (A distance test on the lantern list, not the bitmap — a point can be in a pool
 /// while its cell centre is not, and vice versa.)
 pub fn in_pool(lanterns: &[Lantern], x: f32, z: f32, pool_r: f32) -> bool {
-    lanterns.iter().any(|l| dist2d(l.x, l.z, x, z) <= pool_r)
+    lanterns
+        .iter()
+        .any(|l| dist2d_f64(l.x, l.z, x, z) <= pool_r as f64)
 }
 
 /// The first lantern in plant order within `r` of a point — what `hunter.js:bruteNearLantern` smashes
 /// (it walks `ctx.lanterns` in order and takes the first within `CREATURE.brute.smashR`, one per tick).
 /// Returns the index into `lanterns`.
 pub fn first_within(lanterns: &[Lantern], x: f32, z: f32, r: f32) -> Option<usize> {
-    lanterns.iter().position(|l| dist2d(l.x, l.z, x, z) <= r)
+    lanterns
+        .iter()
+        .position(|l| dist2d_f64(l.x, l.z, x, z) <= r as f64)
 }
 
 /// The nearest lantern within `r` of a point (index and distance), for callers that want the closest one
 /// rather than the JS's first-in-list. Ties keep the earlier lantern.
 pub fn nearest_within(lanterns: &[Lantern], x: f32, z: f32, r: f32) -> Option<(usize, f32)> {
-    let mut best: Option<(usize, f32)> = None;
+    let mut best: Option<(usize, f64)> = None;
     for (i, l) in lanterns.iter().enumerate() {
-        let d = dist2d(l.x, l.z, x, z);
-        if d <= r && best.is_none_or(|(_, bd)| d < bd) {
+        let d = dist2d_f64(l.x, l.z, x, z);
+        if d <= r as f64 && best.is_none_or(|(_, bd)| d < bd) {
             best = Some((i, d));
         }
     }
-    best
+    best.map(|(i, d)| (i, d as f32))
 }
 
 #[cfg(test)]
@@ -190,6 +195,30 @@ mod tests {
         p.recompute(&m, &[], 2.5);
         assert_eq!(p.count(), 0);
         assert_eq!(p, Pool::empty(m.len()));
+    }
+
+    #[test]
+    fn pool_boundary_is_compared_in_f64_like_the_js() {
+        // hypot = 2.500000048618858 in f64 — the JS leaves the cell out; narrowed to f32 it would be exactly 2.5
+        let m = open_map(16, 16);
+        // the f32 values 10.83882999420166 / 10.631708145141602, written with the precision clippy allows
+        let (lx, lz) = (10.838_83_f32, 10.631_708_f32);
+        assert_eq!(
+            (lx as f64, lz as f64),
+            (10.83882999420166, 10.631708145141602)
+        );
+        assert_eq!(
+            dist2d_f64(12.5, 12.5, lx, lz) as f32,
+            2.5,
+            "the f32 distance collapses onto the radius"
+        );
+        assert!(dist2d_f64(12.5, 12.5, lx, lz) > 2.5);
+        let ls = [Lantern::new(lx, lz, 0.0)];
+        let p = recompute(&m, &ls, 2.5);
+        assert!(!p.is_pool(m.idx(12, 12)));
+        assert!(!in_pool(&ls, 12.5, 12.5, 2.5));
+        assert_eq!(first_within(&ls, 12.5, 12.5, 2.5), None);
+        assert_eq!(nearest_within(&ls, 12.5, 12.5, 2.5), None);
     }
 
     #[test]
