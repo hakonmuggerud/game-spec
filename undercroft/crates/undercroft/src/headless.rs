@@ -180,7 +180,10 @@ mod tests {
         let mut app = headless_app();
         app.add_systems(FixedUpdate, emit_once.in_set(SimSet::Economy));
         step(&mut app, 0.1);
-        assert_eq!(log(&app).names(), vec!["uiClick", "toast"]);
+        // `run.rs`'s boot (the port of `main.js`'s init block) announces the flame tier on the
+        // first tick, so this asserts the tail rather than the whole log.
+        let names = log(&app).names();
+        assert!(names.ends_with(&["uiClick", "toast"]), "{names:?}");
         assert_eq!(log(&app).count("toast"), 1);
         assert_eq!(
             log(&app).last("toast"),
@@ -190,16 +193,17 @@ mod tests {
         assert_eq!(log(&app).entries()[0].0, 1, "stamped with the fixed tick");
     }
 
+    /// Whatever the stage-2 handlers leave behind is logged and dropped, and the app keeps
+    /// stepping. (`Begin` used to stand in for "nobody handles this"; `run.rs` handles it now.)
     #[test]
     fn unhandled_debug_commands_are_dropped_and_the_app_keeps_running() {
         let mut app = headless_app();
-        send(&mut app, DebugCommand::Begin);
+        send(&mut app, DebugCommand::Flash);
         send(&mut app, DebugCommand::Key("KeyE".into()));
         step(&mut app, 1.0 / 60.0);
         assert!(app.world().resource::<DebugQueue>().is_empty());
         step(&mut app, 1.0);
         assert_eq!(ticks(&app), 61);
-        assert_eq!(mode(&app), GameMode::Title);
     }
 
     /// End-to-end check of the real asset path: `UndercroftPlugin` on a bare `App`, the loader

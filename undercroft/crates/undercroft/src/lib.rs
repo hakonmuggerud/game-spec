@@ -17,6 +17,7 @@ pub mod debug;
 pub mod headless;
 pub mod messages;
 pub mod resources;
+pub mod run;
 pub mod state;
 pub mod tick;
 
@@ -51,6 +52,7 @@ impl Plugin for SkeletonPlugin {
                 resources::plugin,
                 messages::plugin,
                 debug::plugin,
+                run::plugin,
             ));
     }
 }
