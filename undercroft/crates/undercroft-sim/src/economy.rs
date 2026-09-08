@@ -1838,6 +1838,13 @@ pub fn ride_up(
     )
 }
 
+/// `endgame.js:inSource(c)` — the loaded zone is an endgame zone: it forbids banking (`META.noBank`), it is
+/// the Source itself, or its map carries an altar (`A`). Everything `endgame.js` gates on (`interactTarget`,
+/// `rideUp`, the lap machinery) reads this predicate.
+pub fn in_source(zone: &ZoneDef, map: &ParsedMap) -> bool {
+    zone.no_bank || zone.id == "source" || map.altar.is_some()
+}
+
 /// `endgame.js:interactTarget` — the altar is in reach when within `ENDGAME.altarR` of its cell centre.
 pub fn altar_in_reach(cfg: &Config, map: &ParsedMap, px: f32, pz: f32) -> bool {
     match map.altar {
@@ -2888,6 +2895,22 @@ mod tests {
         let a = map.altar.expect("altar");
         assert!(altar_in_reach(cfg, &map, a.x + 1.0, a.z));
         assert!(!altar_in_reach(cfg, &map, a.x + 2.0, a.z));
+    }
+
+    /// `endgame.js:inSource` — the Source is one, the ordinary zones are not.
+    #[test]
+    fn in_source_is_the_endgame_zone() {
+        let d = data();
+        let src = d.zone("source").expect("source zone");
+        let smap = d.parse_zone("source").unwrap().unwrap();
+        assert!(in_source(src, &smap));
+        let u = d.zone("undercroft").expect("undercroft zone");
+        let umap = d.parse_zone("undercroft").unwrap().unwrap();
+        assert!(!in_source(u, &umap));
+        // an altar on the map is enough on its own (`c.zone.altar`)
+        let mut fake = u.clone();
+        fake.no_bank = false;
+        assert!(in_source(&fake, &smap));
     }
 
     #[test]

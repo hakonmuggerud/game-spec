@@ -16,6 +16,7 @@ pub mod debug;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod headless;
 pub mod messages;
+pub mod player;
 pub mod resources;
 pub mod run;
 pub mod state;
@@ -53,6 +54,7 @@ impl Plugin for SkeletonPlugin {
                 messages::plugin,
                 debug::plugin,
                 run::plugin,
+                player::plugin,
             ));
     }
 }
