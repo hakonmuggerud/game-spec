@@ -10,7 +10,7 @@ native builds later. Four phases were planned:
 
 | Phase | Content | Status |
 |---|---|---|
-| 0 | Toolchain, cargo workspace, wasm pipeline | **Partly done.** Workspace, configs and smoke app exist. The Bevy app crate has never finished compiling: the 3 GB sandbox VM crashed during the build. Nothing was ever rendered, natively or on the web. |
+| 0 | Toolchain, cargo workspace, wasm pipeline | **Done 2026-09-08** on the "sandbox" Arch laptop (8 cores, 16 GB). Native and wasm smoke scenes both render. See §5 for timings and the two config fixes. |
 | 1 | Data extraction + headless sim crate | **Done.** 134 tests, clippy clean, parity-reviewed against the JS. |
 | 2 | Bevy shell (world, creatures, UI, hub, audio plugins) | Not started. Plan in §6. |
 | 3 | Parity checklists, wasm playtest, retire the JS | Not started. |
@@ -25,6 +25,7 @@ Phase 1 economy lane: contracts, follower, economy, save
 (merges)  Phase 1: merge lanes, clippy clean
 Phase 1: parity fixes from review
 Handoff document, lift the build-job cap
+Phase 0: native + wasm smoke scenes render
 ```
 
 ## 2. Layout
@@ -123,17 +124,35 @@ python3 -m http.server 8765 --bind 0.0.0.0 --directory /path/to/game-spec
 # http://<host>:8765/prototype/index.html    Three.js reference
 ```
 
-## 5. Finish Phase 0 first
+## 5. Phase 0 results (2026-09-08, "sandbox" Arch laptop, i7-7700HQ 8 threads, 16 GB)
 
-On the new machine, before any Phase 2 work:
+All three checks pass. Timings, measured with the native and wasm builds running concurrently,
+so each alone is faster:
 
-1. `cargo test` — expect 134 passing.
-2. `cargo build -p undercroft --features dev`, then `cargo run` — expect a window with a lit cube.
-   Note the wall time; it sets the iteration budget for Phase 2.
-3. `trunk build`, serve, open in a browser — expect the same cube in a canvas. This validates
-   `Trunk.toml`, `web/index.html` and the `canvas: "#undercroft"` selector in `main.rs`.
-4. If either fails on an API name, Bevy 0.19 is the pinned version; `cargo doc -p bevy --open` or
-   docs.rs/bevy/0.19.1 resolves it. The smoke app is 60 lines; rewriting it is fine.
+| Step | Result |
+|---|---|
+| `cargo test` | 134 passing, 47 s cold |
+| `cargo build -p undercroft --features dev` | 24.5 min cold; incremental `cargo clippy` of the sim is ~30 s |
+| `trunk build` | 16 min cold; `dist/undercroft_bg.wasm` is ~100 MB in the dev profile (debuginfo) |
+
+Two config fixes were needed and are committed:
+
+- `web/index.html`: the `rel="rust"` link needs `href="../crates/undercroft/Cargo.toml"`; Trunk
+  otherwise looks for a manifest next to the HTML file.
+- getrandom 0.3 (pulled in by rand 0.9) refuses to compile for wasm32 without the `wasm_js`
+  backend: `getrandom = { version = "0.3", features = ["wasm_js"] }` as a wasm32-only dep of the
+  sim crate, plus `--cfg getrandom_backend="wasm_js"` in `.cargo/config.toml`.
+
+Running natively over SSH (no X session on the host): start `Xvfb :99`, then run with
+`DISPLAY=:99 WINIT_UNIX_BACKEND=x11 VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json` so wgpu
+picks the lavapipe software Vulkan adapter, and grab frames with `xwd -root | magick xwd:- out.png`.
+Always launch through `cargo run` (or set `LD_LIBRARY_PATH` to `target/debug/deps` and the rustlib
+dir): the `dev` feature links Bevy dynamically. For the wasm build, the agent-sandbox container's
+Firefox can load `http://100.114.229.118:8765/undercroft/dist/` and `docker exec sandbox screenshot`
+captures it. The GTX 1050 Ti was not used; the NVIDIA Vulkan ICD needs a real X/Wayland session.
+
+`trunk build` uses `CARGO_TARGET_DIR=target-wasm` in practice so it never invalidates the native
+`target/`; both directories are git-ignored.
 
 ## 6. Phase 2 plan: the Bevy shell
 

@@ -4,6 +4,8 @@ rustflags = ["-C", "link-arg=-fuse-ld=mold"]
 
 [target.wasm32-unknown-unknown]
 runner = "wasm-server-runner"
+# Required by getrandom 0.3 (via rand 0.9) on the web; see the note in Cargo.toml.
+rustflags = ['--cfg', 'getrandom_backend="wasm_js"']
 
 # On a machine with less than ~8 GB RAM, cap parallel rustc jobs while building Bevy:
 # [build]

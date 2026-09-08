@@ -1,4 +1,5 @@
 /target
+/target-wasm
 /dist
 /tools/export/node_modules
 /tools/export/out
