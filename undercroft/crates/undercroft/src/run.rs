@@ -1747,6 +1747,21 @@ fn persist_save(
     }
 }
 
+/// `save.js:126-127` (`pagehide` / `visibilitychange` → `flush()`): a pending debounced write must
+/// not be lost when the app quits. Native half; the wasm `pagehide` listener is the UI lane's.
+fn flush_save_on_exit(
+    mut exits: MessageReader<AppExit>,
+    mut writer: ResMut<SaveWriter>,
+    save: Res<SaveRes>,
+    store: Res<SaveStoreRes>,
+) {
+    if exits.read().next().is_some() && writer.dirty {
+        writer.dirty = false;
+        writer.timer = 0.0;
+        store.0.store(&save.0.to_json());
+    }
+}
+
 /// The `main.js` lifecycle: mode changes, the fade, and the per-tick sim calls that are not the
 /// player's.
 pub fn plugin(app: &mut App) {
@@ -1787,7 +1802,8 @@ pub fn plugin(app: &mut App) {
                 .chain()
                 .in_set(SimSet::Economy)
                 .run_if(data_ready),
-        );
+        )
+        .add_systems(Last, flush_save_on_exit);
 }
 
 #[cfg(test)]
@@ -1795,6 +1811,36 @@ mod tests {
     use super::*;
     use crate::headless::*;
     use crate::resources::MemoryStore;
+
+    /// `save.js:126` — a write still inside the debounce window is flushed when the app quits.
+    #[test]
+    fn a_pending_save_is_flushed_on_app_exit() {
+        let store = MemoryStore::new();
+        let mut app = headless_app_with_store(store.clone());
+        send(&mut app, DebugCommand::Begin);
+        step(&mut app, 2.0);
+        // `SetPoints` stores immediately; a plain event afterwards only arms the debounce.
+        send(&mut app, DebugCommand::SetPoints(40));
+        step(&mut app, 1.0);
+        send(
+            &mut app,
+            DebugCommand::SetResources {
+                oil: Some(77),
+                relics: None,
+                rich: None,
+            },
+        );
+        step(&mut app, 1.0 / 60.0);
+        app.world_mut().resource_mut::<SaveWriter>().dirty = true;
+        app.world_mut().resource_mut::<SaveRes>().0.oil = 123;
+        app.world_mut().write_message(AppExit::Success);
+        app.update();
+        let json = store.peek().expect("stored");
+        assert!(
+            json.contains("123"),
+            "flushed save should carry oil=123: {json}"
+        );
+    }
 
     /// `headless_app()` falls back to `resources::default_store()`, which is a *file* natively; every
     /// test here keeps its own `localStorage` so nothing leaks between runs.

@@ -971,7 +971,7 @@ fn player_movement(
     let it = *intent;
     *intent = MoveIntent::default();
     let mode = w.mode();
-    // `Cfg` is scalars only, so this copy is free; cloning the whole `Config` every tick would not be
+    // `Cfg` is scalars only, so copying it out releases the borrow on `w.game` cheaply.
     let cfg = w.game.config().cfg.clone();
     let bands = w
         .zone

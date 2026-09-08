@@ -75,7 +75,7 @@ them. The foundation agent defines them; field types come from the sim crate, no
 - `Res<GameDataHandle>` and access helper `fn data<'a>(assets: &'a Assets<GameDataAsset>, h: &GameDataHandle) -> &'a GameData`. Prefer a `SystemParam` `Game<'w>` exposing `.data()`, `.tuning()`.
 - `Tuning` (sim `creature::Tuning`, built once from `Config` via `creature::tuning`) stored inside the asset or a derived resource that is rebuilt whenever the asset changes (hot reload).
 - `SaveRes(pub SaveData)`; `HubRes(pub HubState)`; `LampRes(pub LampState)`.
-- `Clock { time: f32 }` — `state.time`, the run clock, advanced in `FixedUpdate` only while `sim_runs`.
+- `Clock { time: f32 }` — `state.time`, the game clock, advanced every fixed tick in every mode (`main.js:655`).
 - `Zone` resource (`Option`-al until a zone is loaded): `id: String`, `map: ParsedMap`, `doors: ZoneDoors`, `pool: Pool`, `lanterns: Vec<pool::Lantern>`, `hunters: Vec<creature::Hunter>`, `items: Vec<WorldItem>` (`kind: ItemKind, x, z, contents: Option<Carried>`; quest and bundle items included), `source: Option<economy::SourceRun>`. `hunters` is the authoritative creature list; the creatures lane spawns one entity per record indexed by `Hunter.id` and mirrors, never owns.
 - `HubMap` resource: `map: ParsedMap` from `GameData::parse_hub` plus `mask: collision::BlockMask` (the hub lane fills prop footprints into it later).
 - `Npcs` resource wrapping sim `follower::Npcs`.
@@ -186,7 +186,7 @@ Committed as "Phase 2 skeleton: stage 1 foundation". Differences from §3–§5 
 - `ZoneRes(Option<Zone>)` and `HubMapRes(Option<HubMap>)` are always present; nothing inserts or
   removes resources at runtime. `HubMapRes` is empty until `run.rs` fills it (begin / enterHub).
 - `Tuning` lives inside `GameDataAsset`; use the `Game` system param (`.data()`, `.config()`, `.tuning()`).
-- `TickCount` is the monotone tick counter; `Clock.time` advances only in `Zone`.
+- `TickCount` is the monotone tick counter; `Clock.time` advances every tick in every mode, as `main.js:655` does (the verifier caught the earlier "Zone only" wording contradicting the JS).
 - `Fade` is defined but undriven; `run.rs` owns `updateFade` (`main.js:210`). Add `PendingTransition`
   variants as needed, never closures.
 - `SaveStore` moves JSON strings; `run.rs` owns (de)serialisation and migration through `sim::save`.

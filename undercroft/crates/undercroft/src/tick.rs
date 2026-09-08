@@ -8,8 +8,6 @@
 
 use bevy::prelude::*;
 
-use crate::state::{sim_runs, Mode};
-
 /// Simulation rate (Hz). `Time<Fixed>` is set to this.
 pub const TICK_HZ: f64 = 60.0;
 
@@ -40,30 +38,21 @@ pub enum SimSet {
 }
 
 /// Fixed ticks since the app started, for [`crate::messages::EventLog`] stamps and cadence debug.
-/// Advances in every mode, unlike [`Clock`].
 #[derive(Resource, Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct TickCount(pub u64);
 
-/// `main.js:53 state.time` — the run clock in seconds. Only advances while the sim runs (`ZONE`);
-/// the sim's timestamps (`Lantern.planted`, `Hunter.busy_t`, blink phases) are all relative to it.
+/// `main.js:53 state.time` — the game clock in seconds. `main.js:655` adds `dt` every frame in every
+/// mode (title, hub, menus and the death screen included); the sim's timestamps (`Lantern.planted`,
+/// `Hunter.busy_t`, blink phases, hub resident bob) are all relative to it.
 #[derive(Resource, Debug, Default, Clone, Copy, PartialEq)]
 pub struct Clock {
     pub time: f32,
 }
 
 /// Runs before every other `FixedUpdate` system.
-fn advance_clock(
-    time: Res<Time>,
-    mode: Mode,
-    mut tick: ResMut<TickCount>,
-    mut clock: ResMut<Clock>,
-) {
+fn advance_clock(time: Res<Time>, mut tick: ResMut<TickCount>, mut clock: ResMut<Clock>) {
     tick.0 = tick.0.wrapping_add(1);
-    // `Mode`, not `State<GameMode>`: several fixed ticks can run inside one frame, and only the
-    // first of them sees a `NextState` set by the previous frame's ticks as applied.
-    if sim_runs(mode.get()) {
-        clock.time += time.delta_secs();
-    }
+    clock.time += time.delta_secs();
 }
 
 /// The 60 Hz clock, the `SimSet` chain and the run clock.
