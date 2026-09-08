@@ -97,7 +97,7 @@ them. The foundation agent defines them; field types come from the sim crate, no
 - `Time<Fixed>` at 60 Hz. `SimSet` order inside `FixedUpdate`: `Debug → Input → Player → Creatures → Follower → Contracts → Economy → Fanout`. `Input` is where the world lane will turn keyboard/mouse into `MoveIntent`; the skeleton leaves it empty. Cadences (0.2 s sense tick, 0.3 s repath, 0.25 s follower) are already inside the sim; just pass `dt = time.delta_secs()` of the fixed clock.
 - `headless_app() -> App`: `MinimalPlugins` + `StatesPlugin` + `AssetPlugin` is *not* used; instead load `GameData::from_dir(GameData::workspace_data_dir())` synchronously, insert it into `Assets<GameDataAsset>` (register the asset type manually) and start in `GameMode::Title`. Add `UndercroftPlugin::headless()` (or a `SkeletonPlugins` group without window/render/audio) so the very same systems run. Provide `fn step(app: &mut App, secs: f32)` that sets `TimeUpdateStrategy::ManualDuration` and calls `app.update()` enough times for `FixedUpdate` to run `round(secs * 60)` ticks, and `fn send(app, DebugCommand)`, `fn log(app) -> &EventLog`, `fn mode(app) -> GameMode`.
 - Foundation test (in `headless.rs` under `#[cfg(test)]`): the harness boots, reaches `Title`,
-  `GameData` is loaded (`zones.len() == 5`), a test system that writes one `SimMessage` shows up in
+  `GameData` is loaded (`zones.len() == 4`), a test system that writes one `SimMessage` shows up in
   `EventLog`, a `DebugCommand` nobody handles is dropped with a warning and the app keeps stepping.
   The `Begin → Hub` path belongs to stage 2.
 
@@ -174,3 +174,21 @@ Title; checks every HANDOFF §6 "side effects" bullet has an implementation site
 sim function was reimplemented in the app crate; reports findings ranked by severity with
 file:line, and fixes only clear-cut defects (compile/clippy/test failures, wrong JS number)
 itself.
+
+## 8. Stage 1 outcome (what stage 2 must know)
+
+Committed as "Phase 2 skeleton: stage 1 foundation". Differences from §3–§5 above, all deliberate:
+
+- Debug handlers must be in `DebugSet::Handle` (a sub-set of `SimSet::Debug`); the sweep that drops
+  unhandled commands runs in `DebugSet::Drain` after it.
+- `Player` has no lamp fields; `oil`, `lamp_on`, `flash_t`, `lamp_lock` live only in `LampRes`, and
+  `Player::view(&self, &LampState, lamp_reach, follower)` builds the `PlayerView`.
+- `ZoneRes(Option<Zone>)` and `HubMapRes(Option<HubMap>)` are always present; nothing inserts or
+  removes resources at runtime. `HubMapRes` is empty until `run.rs` fills it (begin / enterHub).
+- `Tuning` lives inside `GameDataAsset`; use the `Game` system param (`.data()`, `.config()`, `.tuning()`).
+- `TickCount` is the monotone tick counter; `Clock.time` advances only in `Zone`.
+- `Fade` is defined but undriven; `run.rs` owns `updateFade` (`main.js:210`). Add `PendingTransition`
+  variants as needed, never closures.
+- `SaveStore` moves JSON strings; `run.rs` owns (de)serialisation and migration through `sim::save`.
+- `headless.rs` is native-only (`cfg(not(wasm32))`) and compiled in every native build.
+- The data has 4 zones plus the hub map.

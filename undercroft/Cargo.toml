@@ -32,6 +32,8 @@ rand = { version = "0.9", features = ["small_rng"] }
 # `wasm_js` backend is enabled (feature here + `--cfg getrandom_backend="wasm_js"` in
 # .cargo/config.toml). The sim only seeds from `SimRng`, but rand still links the crate.
 getrandom = { version = "0.3", features = ["wasm_js"] }
+# Web-only: `localStorage` for the save (app crate, wasm32 target only).
+web-sys = { version = "0.3", features = ["Window", "Storage"] }
 
 # Bevy with a trimmed feature set: no glTF, scenes, animation, gamepads or picking.
 # `dynamic_linking` is added only by the app crate's `dev` feature (native builds).

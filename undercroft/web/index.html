@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>The Undercroft</title>
   <link data-trunk rel="rust" href="../crates/undercroft/Cargo.toml" data-bin="undercroft" data-wasm-opt="0" />
+  <!-- assets/ must reach dist/assets/: the wasm build's AssetPlugin file_path is the page-relative "assets" -->
+  <link data-trunk rel="copy-dir" href="../assets" />
   <style>
     html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
     canvas#undercroft { display: block; width: 100vw; height: 100vh; outline: none;

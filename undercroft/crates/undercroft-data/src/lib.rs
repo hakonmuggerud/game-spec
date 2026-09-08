@@ -62,6 +62,10 @@ pub enum DataError {
         rows: usize,
         size: i32,
     },
+    /// A caller-supplied reader ([`GameData::from_reader`]) could not produce the file. `path` is the
+    /// data-directory-relative name that was asked for ("config.ron", "maps/hub.txt").
+    #[error("{path}: {message}")]
+    Read { path: String, message: String },
 }
 
 /// Read a RON file into `T`.
@@ -125,35 +129,79 @@ impl GameData {
         "models",
     ];
 
-    /// Load `assets/data/` (`dir` is that directory).
+    /// Load `assets/data/` (`dir` is that directory). A thin wrapper over [`GameData::from_reader`]
+    /// that reads each name with `std::fs`.
     pub fn from_dir(dir: &Path) -> Result<GameData, DataError> {
-        let ron = |name: &str| dir.join(format!("{name}.ron"));
-        let config: Config = load_ron(&ron("config"))?;
-        let palettes = load_ron(&ron("palettes"))?;
-        let mut zones: Vec<ZoneDef> = load_ron(&ron("zones"))?;
+        let mut read = |rel: &str| -> Result<String, String> {
+            std::fs::read_to_string(dir.join(rel)).map_err(|e| e.to_string())
+        };
+        GameData::from_reader(&mut read)
+    }
+
+    /// Load the same eight RON files and five map texts through a caller-supplied reader, so a host that
+    /// does not have a filesystem (the Bevy asset server, a wasm build) can provide the bytes. `read` is
+    /// called with data-directory-relative names: `"config.ron"`, `"maps/hub.txt"`. Load order and every
+    /// validation are identical to [`GameData::from_dir`].
+    pub fn from_reader(
+        read: &mut dyn FnMut(&str) -> Result<String, String>,
+    ) -> Result<GameData, DataError> {
+        fn text(
+            read: &mut dyn FnMut(&str) -> Result<String, String>,
+            name: &str,
+        ) -> Result<String, DataError> {
+            read(name).map_err(|message| DataError::Read {
+                path: name.to_string(),
+                message,
+            })
+        }
+        fn ron_file<T: DeserializeOwned>(
+            read: &mut dyn FnMut(&str) -> Result<String, String>,
+            stem: &str,
+        ) -> Result<T, DataError> {
+            let name = format!("{stem}.ron");
+            let src = text(read, &name)?;
+            ron::from_str(&src).map_err(|source| DataError::Ron {
+                path: PathBuf::from(name),
+                source,
+            })
+        }
+        fn rows(
+            read: &mut dyn FnMut(&str) -> Result<String, String>,
+            name: &str,
+        ) -> Result<Vec<String>, DataError> {
+            let src = text(read, name)?;
+            Ok(src
+                .lines()
+                .map(|l| l.trim_end_matches('\r').to_string())
+                .filter(|l| !l.is_empty())
+                .collect())
+        }
+
+        let config: Config = ron_file(read, "config")?;
+        let palettes = ron_file(read, "palettes")?;
+        let mut zones: Vec<ZoneDef> = ron_file(read, "zones")?;
         for z in &mut zones {
-            let path = dir.join("maps").join(format!("{}.txt", z.id));
-            let rows = load_rows(&path)?;
-            if rows.len() != z.size as usize {
+            let name = format!("maps/{}.txt", z.id);
+            let map_rows = rows(read, &name)?;
+            if map_rows.len() != z.size as usize {
                 return Err(DataError::Size {
-                    path,
-                    rows: rows.len(),
+                    path: PathBuf::from(name),
+                    rows: map_rows.len(),
                     size: z.size,
                 });
             }
             // parse once so a bad map fails at load time, not in the sim
             let mut probe = z.clone();
-            probe.rows = rows.clone();
+            probe.rows = map_rows.clone();
             parse_zone(&probe).map_err(|source| DataError::Map {
-                path: path.clone(),
+                path: PathBuf::from(name),
                 source,
             })?;
-            z.rows = rows;
+            z.rows = map_rows;
         }
-        let hub_path = dir.join("maps").join("hub.txt");
-        let hub_rows = load_rows(&hub_path)?;
+        let hub_rows = rows(read, "maps/hub.txt")?;
         parse_hub(&hub_rows, config.hub_ox).map_err(|source| DataError::Map {
-            path: hub_path,
+            path: PathBuf::from("maps/hub.txt"),
             source,
         })?;
         Ok(GameData {
@@ -161,11 +209,11 @@ impl GameData {
             palettes,
             zones,
             hub_rows,
-            contracts: load_ron(&ron("contracts"))?,
-            npcs: load_ron(&ron("npcs"))?,
-            buildings: load_ron(&ron("buildings"))?,
-            endgame: load_ron(&ron("endgame"))?,
-            models: load_ron(&ron("models"))?,
+            contracts: ron_file(read, "contracts")?,
+            npcs: ron_file(read, "npcs")?,
+            buildings: ron_file(read, "buildings")?,
+            endgame: ron_file(read, "endgame")?,
+            models: ron_file(read, "models")?,
         })
     }
 
@@ -252,6 +300,23 @@ mod tests {
 
     fn data() -> GameData {
         GameData::from_dir(&GameData::workspace_data_dir()).expect("assets/data loads")
+    }
+
+    #[test]
+    fn from_reader_matches_from_dir() {
+        let dir = GameData::workspace_data_dir();
+        let mut asked: Vec<String> = Vec::new();
+        let mut read = |rel: &str| -> Result<String, String> {
+            asked.push(rel.to_string());
+            std::fs::read_to_string(dir.join(rel)).map_err(|e| e.to_string())
+        };
+        let via_reader = GameData::from_reader(&mut read).expect("from_reader loads");
+        assert_eq!(via_reader, data());
+        assert_eq!(asked.len(), GameData::FILES.len() + 5);
+        assert!(asked.contains(&"config.ron".to_string()));
+        assert!(asked.contains(&"maps/hub.txt".to_string()));
+        let err = GameData::from_reader(&mut |_| Err("nope".into())).unwrap_err();
+        assert_eq!(err.to_string(), "config.ron: nope");
     }
 
     #[test]

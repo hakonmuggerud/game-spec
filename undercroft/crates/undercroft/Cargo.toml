@@ -15,3 +15,11 @@ dev = ["bevy/dynamic_linking", "bevy/file_watcher"]
 undercroft-data = { workspace = true }
 undercroft-sim = { workspace = true }
 bevy = { workspace = true }
+# The asset loader deserialises zones.ron itself to learn the map file names, and reports its own
+# failures as a typed error.
+ron = { workspace = true }
+thiserror = { workspace = true }
+
+# `SaveStore` on the web is localStorage, exactly what `save.js` used.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-sys = { workspace = true }

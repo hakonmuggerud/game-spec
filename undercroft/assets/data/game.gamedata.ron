@@ -1,0 +1,4 @@
+// The game data root. Its contents are irrelevant: the extension `.gamedata.ron` is what
+// routes it to `undercroft::assets::GameDataLoader`, which then reads config.ron, the other seven
+// RON tables and the map texts in this directory as loader dependencies (so they hot-reload).
+()

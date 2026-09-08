@@ -5017,8 +5017,11 @@ name = "undercroft"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "ron 0.10.1",
+ "thiserror 2.0.20",
  "undercroft-data",
  "undercroft-sim",
+ "web-sys",
 ]
 
 [[package]]
