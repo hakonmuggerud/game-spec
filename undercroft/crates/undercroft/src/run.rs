@@ -79,10 +79,10 @@ pub struct RideUpPending(pub bool);
 System params
 ============================================================ */
 
-/// `ctx.state.mode` / `prevMode` / `menuKind`. [`ModeParam::get`] reports a *pending* mode as well as
-/// the applied one: Bevy runs the `StateTransition` schedule once per frame, after `PreUpdate`, so a
-/// system reading only `State` would still see last tick's mode after a change made this tick —
-/// while `main.js` assigned `state.mode` synchronously.
+/// `ctx.state.mode` / `prevMode` / `menuKind`. [`ModeParam::get`] is [`state::effective`] — the
+/// pending [`NextState`] wins over the applied [`State`], so a mode set earlier in the same tick is
+/// visible to everything that runs after it, as `main.js`'s synchronous `state.mode = m` was. The
+/// read-only half of this is [`state::Mode`], which `player.rs` uses.
 #[derive(SystemParam)]
 pub struct ModeParam<'w> {
     state: Res<'w, State<GameMode>>,
@@ -96,10 +96,7 @@ pub struct ModeParam<'w> {
 impl ModeParam<'_> {
     /// `ctx.state.mode`, as `main.js` would read it within the same frame.
     pub fn get(&self) -> GameMode {
-        match &*self.next {
-            NextState::Pending(s) | NextState::PendingIfNeq(s) => *s,
-            NextState::Unchanged => *self.state.get(),
-        }
+        state::effective(&self.state, &self.next)
     }
 
     /// `state.mode = m`.
@@ -215,15 +212,16 @@ fn zone_id(ctx: &RunCtx) -> String {
     ctx.zone.id().unwrap_or_default().to_string()
 }
 
-/// `endgame.js:inSource(c)` — `meta.noBank`, the id `source`, or a map with an altar.
+/// `endgame.js:109 inSource(c)` — [`economy::in_source`] for the loaded zone. An id the data does not
+/// know (only reachable through a hand-built [`ZoneRes`]) still falls back to the two map-side tests.
 fn in_source(ctx: &RunCtx) -> bool {
     let Some(z) = ctx.zone.get() else {
         return false;
     };
-    if z.id == "source" || z.map.altar.is_some() {
-        return true;
+    match ctx.game.data().zone(&z.id) {
+        Some(def) => economy::in_source(def, &z.map),
+        None => z.id == "source" || z.map.altar.is_some(),
     }
-    ctx.game.data().zone(&z.id).map(|d| d.no_bank) == Some(true)
 }
 
 /// `main.js:spawnAt(m, yaw)` — the player stands on the map's stairs / elevator marker.
@@ -806,6 +804,9 @@ fn to_main_menu(ctx: &mut RunCtx, out: &mut Vec<SimEvent>) -> bool {
         ctx.mode.kind.0 = None;
         push_events(ctx, out, vec![SimEvent::MenuClose { kind }]);
     }
+    // `main.js:470 state.lostBelow` — held back until after `title`, because the ui lane flushes the
+    // run's toasts on `title` and this one has to survive that flush (`main.js:481-484`).
+    let mut lost_below = String::new();
     if ctx.mode.get() == GameMode::Zone {
         let id = zone_id(ctx);
         let lost = economy::describe(&ctx.player.carried);
@@ -823,8 +824,7 @@ fn to_main_menu(ctx: &mut RunCtx, out: &mut Vec<SimEvent>) -> bool {
         );
         enter_hub(ctx, out);
         if lost != "nothing" {
-            let msg = format!("Left below: {lost}.");
-            push_events(ctx, out, vec![SimEvent::toast(msg)]);
+            lost_below = lost;
         }
     }
     if ctx.mode.get() != GameMode::Hub {
@@ -837,6 +837,13 @@ fn to_main_menu(ctx: &mut RunCtx, out: &mut Vec<SimEvent>) -> bool {
         spawn_at(&mut ctx.player, &hm.map, 0.0);
     }
     push_events(ctx, out, vec![SimEvent::Title]);
+    if !lost_below.is_empty() {
+        push_events(
+            ctx,
+            out,
+            vec![SimEvent::toast(format!("Left below: {lost_below}."))],
+        );
+    }
     true
 }
 
@@ -1126,16 +1133,14 @@ fn choose_ending(ctx: &mut RunCtx, id: &str, out: &mut Vec<SimEvent>) -> bool {
 }
 
 /// `endgame.js:continueToHub()` — "Click to continue".
-fn continue_ending(ctx: &mut RunCtx, out: &mut Vec<SimEvent>) -> bool {
+fn continue_ending(ctx: &mut RunCtx) -> bool {
     if ctx.mode.get() != GameMode::Ending || ctx.local.ending.0.screen != Some(Screen::End) {
         return false;
     }
     let id = ctx.local.ending.0.current.clone().unwrap_or_default();
-    if !ctx.fade.start(PendingTransition::EndingContinue { id }) {
-        return false;
-    }
-    push_events(ctx, out, vec![SimEvent::UiClick]);
-    true
+    // `endgame.js:312` emits `uiClick` exactly once; `economy::continue_to_hub` already returns it at
+    // the tail of its batch, so nothing is pushed here (pushing one too would double the click).
+    ctx.fade.start(PendingTransition::EndingContinue { id })
 }
 
 /// The `continueToHub` fade callback. The sim returns `zoneExit`, the `night` cue and
@@ -1383,7 +1388,7 @@ fn run_command(
             open_choice(ctx, out);
         }
         DebugCommand::ContinueEnding => {
-            continue_ending(ctx, out);
+            continue_ending(ctx);
         }
         DebugCommand::Reset => {
             reset_runtime(ctx, out);
@@ -1912,12 +1917,20 @@ mod tests {
         assert_eq!(log(&app).count("menuClose"), 1);
     }
 
-    /// `toMainMenu()` from a zone abandons the run (`main.js:461`).
+    /// `toMainMenu()` from a zone abandons the run (`main.js:461`). The "Left below" toast is emitted
+    /// *after* `title`, not before: `main.js:481-484` emits `title` first so the ui lane's flush of the
+    /// run's toasts cannot swallow this one ("… so this one shows over the main menu").
     #[test]
     fn the_main_menu_abandons_a_run() {
         let mut app = app();
         send(&mut app, DebugCommand::GotoZone("undercroft".into()));
         step(&mut app, 0.5);
+        app.world_mut().resource_mut::<Player>().carried = Carried {
+            oil: 2,
+            relic: 0,
+            rich: 0,
+            quest: 0,
+        };
         send(&mut app, DebugCommand::OpenMainMenu);
         step(&mut app, 0.5);
         assert_eq!(mode(&app), GameMode::Title);
@@ -1926,6 +1939,17 @@ mod tests {
         let ab = names.iter().position(|n| *n == "runAbandoned").expect("ab");
         let ti = names.iter().position(|n| *n == "title").expect("title");
         assert!(ab < ti, "runAbandoned before title: {names:?}");
+        let left_below = log(&app)
+            .entries()
+            .iter()
+            .position(
+                |(_, e)| matches!(e, SimEvent::Toast { msg, .. } if msg.starts_with("Left below")),
+            )
+            .expect("the abandoned loot is announced");
+        assert!(
+            ti < left_below,
+            "`title` before the \"Left below\" toast: {names:?}"
+        );
     }
 
     /// `actions.giveTool(id)` — `toolGained` fires once (`main.js:686`).
@@ -2056,7 +2080,10 @@ mod tests {
         assert!(app.world().resource::<Player>().carried.is_empty());
     }
 
-    /// `hub.select` + `descend()` — the full fade path, and `Zone.doors` comes from the save.
+    /// `hub.select` + `descend()` — the full fade path, and `Zone.doors` comes from the save. The fade
+    /// callback runs in `SimSet::Economy`, i.e. after `player_lamp` has already run this tick, so this
+    /// also covers the other half of the shared-mode fix: the lamp `economy::start_run` lights must
+    /// still be lit on the next tick.
     #[test]
     fn descend_fades_into_the_selected_zone() {
         let mut app = app();
@@ -2068,6 +2095,63 @@ mod tests {
         assert_eq!(mode(&app), GameMode::Zone);
         assert_eq!(zone_res(&app).id(), Some("undercroft"));
         assert_eq!(log(&app).count("zoneEnter"), 1);
+        assert!(
+            app.world().resource::<LampRes>().0.lamp_on,
+            "descend leaves the handlamp lit"
+        );
+    }
+
+    /// `endgame.js:296 continueToHub()` emits `uiClick` once (`endgame.js:312`); the fade callback then
+    /// runs `zoneExit → enterHub → endingContinue`. Nothing may add a second click.
+    #[test]
+    fn the_ending_continue_clicks_once_and_returns_to_the_hub() {
+        let mut app = app();
+        send(&mut app, DebugCommand::UnlockAll);
+        send(&mut app, DebugCommand::GotoZone("source".into()));
+        step(&mut app, 0.5);
+        let altar = {
+            let z = zone_res(&app);
+            z.get()
+                .expect("source")
+                .map
+                .altar
+                .expect("the Source altar")
+        };
+        send(
+            &mut app,
+            DebugCommand::Teleport {
+                x: altar.x,
+                z: altar.z,
+                yaw: Some(0.0),
+            },
+        );
+        step(&mut app, 1.0 / 60.0);
+        send(&mut app, DebugCommand::OpenChoice);
+        step(&mut app, 1.0 / 30.0);
+        assert_eq!(mode(&app), GameMode::Ending, "{:?}", log(&app).names());
+        send(&mut app, DebugCommand::Choose("cage".into()));
+        step(&mut app, 1.0 / 30.0);
+        assert_eq!(log(&app).count("ending"), 1, "{:?}", log(&app).names());
+
+        let clicks = log(&app).count("uiClick");
+        send(&mut app, DebugCommand::ContinueEnding);
+        step(&mut app, 2.0);
+        assert_eq!(mode(&app), GameMode::Hub);
+        assert_eq!(log(&app).count("endingContinue"), 1);
+        assert_eq!(
+            log(&app).count("uiClick") - clicks,
+            1,
+            "one click, not two: {:?}",
+            log(&app).names()
+        );
+        let names = log(&app).names();
+        let exit = names.iter().rposition(|n| *n == "zoneExit").expect("exit");
+        let hub = names.iter().rposition(|n| *n == "hubEnter").expect("hub");
+        let cont = names
+            .iter()
+            .rposition(|n| *n == "endingContinue")
+            .expect("continue");
+        assert!(exit < hub && hub < cont, "{names:?}");
     }
 
     /// `main.js:actions.clearSave()` — abandon, wipe, back to the title.

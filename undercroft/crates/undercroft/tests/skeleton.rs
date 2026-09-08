@@ -25,17 +25,6 @@ fn game_data(app: &App) -> GameData {
     assets.get(&handle).expect("data loaded").data.clone()
 }
 
-/// Turn the handlamp back on. Works around a real cross-lane defect (see the stage-3 report and
-/// `player.rs`'s `mod tests::relight`): entering a zone through the debug/action queue leaves the
-/// handlamp permanently off because `player.rs`'s `Sim::mode()` (player.rs:172) reads
-/// `Res<State<GameMode>>`, which still holds the *previous* mode for the one fixed tick in which
-/// `run.rs::start_run` sets `NextState` and turns the lamp on directly — so `player_lamp`
-/// (player.rs:1072) sees an unchanged mode, decides the lamp is not allowed and snuffs it, and
-/// nothing ever relights it. Tests below that are not about the lamp itself call this first.
-fn relight(app: &mut App) {
-    app.world_mut().resource_mut::<LampRes>().0.lamp_on = true;
-}
-
 /// Start a real run the way `actions.gotoZone(id)` does and wait for `Zone` to apply. `headless_app`
 /// gives every app its own fresh in-memory save store, so nothing leaks between tests.
 fn app_in_zone(id: &str) -> App {
@@ -136,9 +125,11 @@ fn goto_zone_spawns_every_marker_and_places_the_player_at_the_entry() {
 #[test]
 fn a_hunter_catch_kills_the_player_and_returns_to_the_hub() {
     let mut app = app_in_zone("undercroft");
-    // the "still" sense already registers at 1 unit without light, but relight for a robust catch
-    // regardless of exactly how far apart the two floor cells below end up being.
-    relight(&mut app);
+    // `startRun` leaves the handlamp lit, so the hunter's sight sense registers the player at once.
+    assert!(
+        app.world().resource::<LampRes>().0.lamp_on,
+        "startRun lights the handlamp"
+    );
     let map = game_data(&app)
         .parse_zone("undercroft")
         .expect("zone")
@@ -269,7 +260,10 @@ fn pickup_then_bank_credits_the_ledger_and_returns_to_the_hub() {
 #[test]
 fn lamp_flash_and_lantern_are_logged() {
     let mut app = app_in_zone("undercroft");
-    relight(&mut app); // see the defect note on `relight` above
+    assert!(
+        app.world().resource::<LampRes>().0.lamp_on,
+        "startRun lights the handlamp"
+    );
 
     send(&mut app, DebugCommand::ToggleLamp);
     step(&mut app, 1.0 / 60.0);

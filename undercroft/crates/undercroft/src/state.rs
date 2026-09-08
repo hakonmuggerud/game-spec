@@ -2,6 +2,7 @@
 //! 'MENU' | 'ENDING'`) plus a `Loading` mode the JS has no need for: the Bevy build reads its data
 //! through the asset server, which is asynchronous.
 
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 
 /// `main.js:53 state.mode`. `Loading` is the Bevy-only start mode (see the module docs).
@@ -73,4 +74,42 @@ pub fn lamp_allowed(mode: GameMode) -> bool {
 /// A menu can be opened from here (`main.js:426 openMenu` returns early otherwise).
 pub fn can_open_menu(mode: GameMode) -> bool {
     matches!(mode, GameMode::Hub | GameMode::Zone)
+}
+
+/// `ctx.state.mode` as `main.js` would read it *within the same tick*: the pending
+/// [`NextState`] wins over the applied [`State`].
+///
+/// Bevy applies a queued state change in the `StateTransition` schedule, which runs once per frame
+/// before `RunFixedMainLoop`, so a system reading only `State<GameMode>` still sees the previous
+/// mode for the rest of the tick — and for every further fixed tick of the same frame — after
+/// another system called [`Mode::set`]. `main.js` assigned `state.mode = m` synchronously, so every
+/// listener that ran later in the same call already saw the new mode. Every `FixedUpdate` system in
+/// this crate therefore asks [`effective`] (through [`Mode`] or `run.rs`'s `ModeParam`) rather than
+/// reading `State<GameMode>` on its own.
+pub fn effective(state: &State<GameMode>, next: &NextState<GameMode>) -> GameMode {
+    match next {
+        NextState::Pending(s) | NextState::PendingIfNeq(s) => *s,
+        NextState::Unchanged => *state.get(),
+    }
+}
+
+/// Read-only [`effective`] mode for any system: `fn sys(mode: Mode) { if mode.get() == … }`.
+/// Systems that also *change* the mode use `run.rs`'s `ModeParam`, which holds the same two
+/// resources with `NextState` mutable.
+#[derive(SystemParam)]
+pub struct Mode<'w> {
+    state: Res<'w, State<GameMode>>,
+    next: Res<'w, NextState<GameMode>>,
+}
+
+impl Mode<'_> {
+    /// `ctx.state.mode`, pending change included.
+    pub fn get(&self) -> GameMode {
+        effective(&self.state, &self.next)
+    }
+
+    /// The mode Bevy has actually applied — only for systems that must not act twice in one frame.
+    pub fn applied(&self) -> GameMode {
+        *self.state.get()
+    }
 }

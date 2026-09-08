@@ -29,7 +29,7 @@ pub use resources::{
     Fade, FadeMode, Game, HubMapRes, LampRes, MoveIntent, Npcs, PendingTransition, Player,
     PlayerViewRes, RngRes, SaveRes, SaveStore, SaveStoreRes, Spawns, Zone, ZoneRes,
 };
-pub use state::{GameMode, MenuKind, PrevMode};
+pub use state::{GameMode, MenuKind, Mode, PrevMode};
 pub use tick::{Clock, SimSet, TickCount, TICK_DT, TICK_HZ};
 
 use bevy::prelude::*;
