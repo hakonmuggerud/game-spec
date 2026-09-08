@@ -1,6 +1,6 @@
 # The Undercroft — Bevy port
 
-Cargo workspace for the Rust/Bevy port of [`../prototype`](../prototype) (the Three.js prototype
+Cargo workspace for the Rust/Bevy port (resuming on a new machine? read [`HANDOFF.md`](HANDOFF.md)) of [`../prototype`](../prototype) (the Three.js prototype
 stays untouched as the playable reference until this build passes DESIGN.md §5.9 and §13).
 
 | Crate | Depends on | Owns |
