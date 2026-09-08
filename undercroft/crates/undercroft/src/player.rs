@@ -1154,85 +1154,28 @@ mod tests {
     use super::*;
     use crate::headless::*;
     use crate::messages::EventLog;
-    use crate::resources::WorldItem;
+    use crate::resources::MemoryStore;
     use undercroft_sim::economy::LampState;
-    use undercroft_sim::save::SaveData as Save;
-    use undercroft_sim::world::ZoneDoors;
-    use undercroft_sim::Pool;
-    use undercroft_sim::SimRng;
 
-    /// Build a zone the way `run.rs` will (`world.js:loadZone` + `hunter.js:spawnAll`) and enter it.
-    fn enter_zone(app: &mut App, id: &str) {
-        let asset = {
-            let handle = app.world().resource::<GameDataHandleAlias>().0.clone();
-            let assets = app.world().resource::<Assets<crate::GameDataAsset>>();
-            assets.get(&handle).expect("data").clone()
-        };
-        let data = asset.data;
-        let def = data.zone(id).expect("zone").clone();
-        let map = data.parse_zone(id).expect("known zone").expect("parses");
-        let doors = ZoneDoors::closed(&map);
-        let pool = Pool::empty(map.len());
-        let items: Vec<WorldItem> = map
-            .items
-            .iter()
-            .map(|s| {
-                let (x, z) = grid::center(&map, s.cx, s.cz);
-                WorldItem::new(s.kind, x, z)
-            })
-            .collect();
-        let mut evs = Vec::new();
-        let mut rng = SimRng::seed(7);
-        let view = PlayerView::default();
-        let hunters = {
-            let env = Env {
-                map: &map,
-                pool: &pool,
-                player: &view,
-                lanterns: &[],
-                items: &[],
-                in_zone: true,
-                time: 0.0,
-            };
-            let mut ctx = Ctx::new(&env, &asset.tuning, &mut rng, &mut evs);
-            creature::spawn_all(&mut ctx, &def)
-        };
-        let entry = map.stairs.expect("every zone has an entry").marker;
-        let (ex, ez) = (entry.x, entry.z);
-        {
-            let world = app.world_mut();
-            world.resource_mut::<ZoneRes>().0 = Some(Zone {
-                id: id.to_string(),
-                map,
-                doors,
-                pool,
-                lanterns: Vec::new(),
-                hunters,
-                items,
-                source: None,
-            });
-            world.resource_mut::<Player>().reset_at(ex, ez, 0.0);
-            world.resource_mut::<LampRes>().0 = LampState {
-                oil: 50.0,
-                lamp_on: true,
-                ..Default::default()
-            };
-            world.resource_mut::<SaveRes>().0 = Save::default();
-            world
-                .resource_mut::<NextState<GameMode>>()
-                .set(GameMode::Zone);
-        }
-        step(app, 1.0 / 60.0);
-        assert_eq!(mode(app), GameMode::Zone);
-    }
-
-    // `GameDataHandle` is re-exported from the crate root; alias it so the helper reads cleanly.
-    use crate::assets::GameDataHandle as GameDataHandleAlias;
-
-    /// `SkeletonPlugin` already adds [`plugin`]; the harness needs no extra registration.
+    /// Start a real run through the same path `actions.gotoZone(id)` takes
+    /// (`run.rs::goto_zone` — begin from `Title` if needed, `load_zone_inactive`, `start_run`),
+    /// rather than poking `ZoneRes` by hand: `run.rs`'s `boot` system runs in the same
+    /// `DebugSet::Handle` set and would otherwise clobber a hand-built zone with the inactive one
+    /// it loads for the save's selected zone. Each test gets its own in-memory save store so
+    /// nothing leaks between them.
     fn app_in_zone(id: &str) -> App {
-        let mut app = headless_app();
-        enter_zone(&mut app, id);
+        let mut app = headless_app_with_store(MemoryStore::new());
+        send(&mut app, DebugCommand::GotoZone(id.into()));
+        step(&mut app, 0.5);
+        // `NextState` is applied by the `StateTransition` schedule of the *next* frame, so `mode`
+        // can still lag the tick that queued the command by one; the extra half-second above is
+        // normally enough, but one more tick makes the wait explicit rather than incidental.
+        step(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            mode(&app),
+            GameMode::Zone,
+            "gotoZone starts the run immediately"
+        );
         app
     }
 
@@ -1256,13 +1199,57 @@ mod tests {
         app.world().resource::<LampRes>().0
     }
 
+    /// Work around a real cross-lane defect (see the stage-3 report and
+    /// `defect_gotozone_snuffs_the_handlamp_for_the_whole_run` below): entering a zone through the
+    /// debug/action queue leaves the handlamp off, even though `economy::start_run` turns it on,
+    /// so tests whose actual subject is something else (toggling, key handling, exploration) need
+    /// to relight it themselves as a precondition.
+    fn relight(app: &mut App) {
+        app.world_mut().resource_mut::<LampRes>().0.lamp_on = true;
+    }
+
     fn log_names(app: &App) -> Vec<&'static str> {
         app.world().resource::<EventLog>().names()
+    }
+
+    /// DEFECT (not fixed here — out of scope for the tests stage; see the stage-3 report):
+    /// `player.rs`'s `Sim::mode()` (player.rs:172) reads `Res<State<GameMode>>` directly, unlike
+    /// `run.rs`'s `ModeParam::get()` (run.rs:~99), which reads the *pending* `NextState` so
+    /// `main.js`'s synchronous `state.mode = m` semantics survive the port. Bevy applies a pending
+    /// `NextState` in the `StateTransition` schedule, which runs once per frame *before*
+    /// `RunFixedMainLoop`/`FixedUpdate` (`bevy_app::main_schedule`) — so a `NextState` set by a
+    /// `FixedUpdate` system this tick (e.g. `run.rs::start_run` reacting to `GotoZone`/`Descend`)
+    /// is invisible to `Res<State<GameMode>>` for the rest of *this* tick, including the
+    /// `player_lamp` system (player.rs:1072) that runs right after it in `SimSet::Player`.
+    ///
+    /// Repro: `start_run` (run.rs:612-638) sets `lamp.lamp_on = true` directly and calls
+    /// `ctx.mode.set(Zone)` in the same tick. `player_lamp` runs later in that tick, still sees the
+    /// old mode (`Title` or `Hub`), so `state::lamp_allowed(mode)` is `false` and
+    /// `economy::update_lamp` (undercroft-sim/src/economy.rs:307-309) force-sets `lamp_on = false`.
+    /// Nothing ever turns it back on (`update_lamp` never sets `lamp_on = true`, only toggling
+    /// does), so every run started through the debug/action queue — which is the *only* way a real
+    /// build starts one — begins with the handlamp permanently snuffed until the player manually
+    /// toggles it. `main.js` has no equivalent bug: `state.mode` is a plain assignment, so
+    /// `updateLamp`, called later in the same synchronous `startRun()`, already sees the new mode.
+    #[test]
+    #[ignore = "defect: GotoZone/Descend leave the handlamp snuffed for the whole run because \
+                player.rs's Sim::mode() (player.rs:172) reads Res<State<GameMode>> instead of the \
+                pending NextState run.rs's ModeParam uses, so the same-tick player_lamp system \
+                still sees the pre-transition mode and economy::update_lamp force-extinguishes the \
+                lamp start_run had just turned on; see the doc comment above and the stage-3 report"]
+    fn defect_gotozone_snuffs_the_handlamp_for_the_whole_run() {
+        let app = app_in_zone("undercroft");
+        assert!(
+            lamp_of(&app).lamp_on,
+            "economy::start_run turned the lamp on; player_lamp's stale mode read snuffs it \
+             the same tick and nothing relights it"
+        );
     }
 
     #[test]
     fn toggle_lamp_twice_logs_off_then_on() {
         let mut app = app_in_zone("undercroft");
+        relight(&mut app);
         assert!(lamp_of(&app).lamp_on);
         send(&mut app, DebugCommand::ToggleLamp);
         step(&mut app, 1.0 / 60.0);
@@ -1506,6 +1493,7 @@ mod tests {
     #[test]
     fn a_lit_second_in_a_corridor_marks_explored_cells() {
         let mut app = app_in_zone("undercroft");
+        relight(&mut app);
         assert!(lamp_of(&app).lamp_on);
         step(&mut app, 1.0);
         let z = app.world().resource::<ZoneRes>();
@@ -1523,6 +1511,7 @@ mod tests {
     #[test]
     fn keys_are_logged_with_the_mode_and_drive_the_lamp() {
         let mut app = app_in_zone("undercroft");
+        relight(&mut app);
         send(&mut app, DebugCommand::Key("KeyF".into()));
         step(&mut app, 1.0 / 60.0);
         assert!(!lamp_of(&app).lamp_on, "KEYS.lamp is F");

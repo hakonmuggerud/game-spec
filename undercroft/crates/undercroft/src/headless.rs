@@ -20,7 +20,7 @@ use undercroft_sim::SimRng;
 use crate::assets::{asset_plugin, GameDataAsset, GameDataHandle};
 use crate::debug::DebugCommand;
 use crate::messages::EventLog;
-use crate::resources::{RngRes, SaveStore, SaveStoreRes};
+use crate::resources::{MemoryStore, RngRes, SaveStore, SaveStoreRes};
 use crate::state::GameMode;
 use crate::tick::TICK_HZ;
 use crate::{DebugQueue, SkeletonPlugin};
@@ -32,7 +32,10 @@ pub fn workspace_asset() -> GameDataAsset {
     GameDataAsset::from_data(data).expect("config.ron builds the creature tuning")
 }
 
-/// A headless app in [`GameMode::Title`] with the data loaded and an in-memory save store.
+/// A headless app in [`GameMode::Title`] with the data loaded and a fresh, private in-memory save
+/// store — never the platform default (`FileStore`, a real `./undercroft-save.json` on native),
+/// which would leak state between tests. Use [`headless_app_with_store`] to share a store on
+/// purpose.
 pub fn headless_app() -> App {
     build(None, None)
 }
@@ -68,9 +71,10 @@ fn build(seed: Option<u64>, store: Option<SaveStoreRes>) -> App {
     if let Some(seed) = seed {
         app.insert_resource(RngRes(SimRng::seed(seed)));
     }
-    if let Some(store) = store {
-        app.insert_resource(store);
-    }
+    // Always install a store here, before `SkeletonPlugin` (`resources::plugin`) runs: it only
+    // inserts `default_store()` — a `FileStore` natively — when nothing has claimed the resource
+    // yet, and that file would carry state from one test into the next.
+    app.insert_resource(store.unwrap_or_else(|| SaveStoreRes::new(MemoryStore::new())));
     // The harness skips `Loading`: the data is already there.
     app.insert_state(GameMode::Title);
     app.add_plugins(SkeletonPlugin);
