@@ -1,11 +1,12 @@
 //! Window, plugins, run. Everything else lives in the library (`undercroft::*`).
 //!
-//! Until the world lane lands, `GameMode::Title` shows the Phase 0 placeholder scene — a lit
-//! spinning cube — so `cargo run` and the wasm build still draw something after the data loads.
+//! `GameMode::Title` shows the ui lane's main menu over the world lane's view of the hub, as
+//! `main.js` does; the Phase 0 placeholder scene (a lit spinning cube on its own `Camera3d`) was
+//! removed when the lanes landed — only the world lane spawns cameras (PHASE2_LANES §1).
 
 use bevy::prelude::*;
 use undercroft::assets::asset_plugin;
-use undercroft::{GameMode, UndercroftPlugin};
+use undercroft::UndercroftPlugin;
 
 fn main() {
     App::new()
@@ -25,64 +26,5 @@ fn main() {
                 .set(asset_plugin()),
         )
         .add_plugins(UndercroftPlugin)
-        .add_systems(OnEnter(GameMode::Title), spawn_placeholder)
-        .add_systems(OnExit(GameMode::Title), despawn_placeholder)
-        .add_systems(Update, spin.run_if(in_state(GameMode::Title)))
         .run();
-}
-
-/// Everything the placeholder scene spawns, so `OnExit(Title)` can clear it in one query.
-#[derive(Component)]
-struct TitleScene;
-
-/// The cube itself.
-#[derive(Component)]
-struct Spinner;
-
-fn spawn_placeholder(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-) {
-    info!("GameMode::Title — placeholder scene");
-    commands.spawn((
-        Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
-        MeshMaterial3d(materials.add(StandardMaterial {
-            base_color: Color::srgb(0.55, 0.45, 0.35),
-            // The prototype's Lambert look (HANDOFF §6, world lane).
-            perceptual_roughness: 1.0,
-            reflectance: 0.0,
-            ..default()
-        })),
-        Transform::from_xyz(0.0, 0.5, 0.0),
-        Spinner,
-        TitleScene,
-    ));
-    commands.spawn((
-        PointLight {
-            intensity: 20_000.0,
-            range: 12.0,
-            color: Color::srgb(1.0, 0.8, 0.5),
-            ..default()
-        },
-        Transform::from_xyz(1.5, 2.0, 1.5),
-        TitleScene,
-    ));
-    commands.spawn((
-        Camera3d::default(),
-        Transform::from_xyz(2.5, 1.6, 2.5).looking_at(Vec3::new(0.0, 0.5, 0.0), Vec3::Y),
-        TitleScene,
-    ));
-}
-
-fn despawn_placeholder(mut commands: Commands, q: Query<Entity, With<TitleScene>>) {
-    for e in &q {
-        commands.entity(e).despawn();
-    }
-}
-
-fn spin(time: Res<Time>, mut q: Query<&mut Transform, With<Spinner>>) {
-    for mut t in &mut q {
-        t.rotate_y(time.delta_secs() * 0.7);
-    }
 }
