@@ -386,6 +386,10 @@ pub fn death(lost: &str, lost_any: bool) -> TextScreen {
         foot: String::new(),
         // `prototype/index.html:122` — verbatim; Enter/Space/E work too, as they do in the JS.
         cta: "Click to return to the Lantern".to_string(),
+        // Keyboard confirm on `DEAD` is `player.rs::on_key`'s, not this field (that mode never
+        // reaches `ui::keys`); it is set here so `ui::mouse`'s generic "click the cta" handler can
+        // drive the click-anywhere-returns behaviour the same way it drives the ending screen's.
+        confirm: Some(Pick::Cmd(DebugCommand::ReturnToHub)),
         danger_title: true,
         ..TextScreen::default()
     }
@@ -538,6 +542,7 @@ mod tests {
         assert!(death("nothing", false).lines[1].starts_with("You carried nothing"));
         // `prototype/index.html:122` — the call to action is the prototype's, word for word.
         assert_eq!(s.cta, "Click to return to the Lantern");
+        assert_eq!(s.confirm, Some(Pick::Cmd(DebugCommand::ReturnToHub)));
     }
 
     #[test]

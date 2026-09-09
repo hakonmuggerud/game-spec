@@ -299,6 +299,15 @@ impl MenuState {
         })
     }
 
+    /// `ui.js` row `mousemove`/`mouseenter` — hover selects an enabled row outright (no wrap, no
+    /// skip-search: the cursor is already sitting on the row it names). A disabled row is left
+    /// alone, mirroring `move_sel`'s skip and `activate`'s refusal.
+    pub fn hover(&mut self, i: usize) {
+        if self.items.get(i).is_some_and(|it| !it.disabled) {
+            self.sel = i;
+        }
+    }
+
     /// `m.move(dir)` — wraps, skipping disabled rows.
     pub fn move_sel(&mut self, dir: i32) {
         let n = self.items.len();
@@ -741,6 +750,23 @@ mod tests {
         m.move_sel(1);
         assert_eq!(m.sel(), 2);
         assert_eq!(m.activate(1, &c), None);
+    }
+
+    #[test]
+    fn hover_selects_enabled_rows_and_ignores_disabled_ones() {
+        let mut m = MenuState::default();
+        let c = ctx();
+        m.open(PanelKind::MainRoot, &c);
+        m.hover(2);
+        assert_eq!(m.sel(), 2);
+        m.items[1].disabled = true;
+        m.hover(1);
+        assert_eq!(m.sel(), 2, "a disabled row does not steal the selection");
+        m.hover(0);
+        assert_eq!(m.sel(), 0);
+        // out of range is ignored, not a panic
+        m.hover(99);
+        assert_eq!(m.sel(), 0);
     }
 
     #[test]

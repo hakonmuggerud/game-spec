@@ -40,6 +40,12 @@ pub struct LookAccum {
 pub struct PointerLock {
     pub locked: bool,
     pub lock_ever: bool,
+    /// True for exactly the one [`pointer_lock`] call that drops `locked` — always a *mode* change
+    /// (Zone/Dying → Dead, a menu opening, …), never a click. `ui::mouse`'s death-screen handler
+    /// reads this so the click that happened to be mid-flight for some other reason (re-locking the
+    /// pointer, say) on that same frame cannot also register as "dismiss the screen that just
+    /// appeared".
+    pub released_this_frame: bool,
 }
 
 /// `KEYS` (`config.js:132`) as Bevy key codes. Only the bindings the game reads; everything else
@@ -189,6 +195,7 @@ pub(super) fn pointer_lock(
     mut lock: ResMut<PointerLock>,
     mut cursor: Query<&mut CursorOptions, With<PrimaryWindow>>,
 ) {
+    lock.released_this_frame = false;
     let Ok(mut cursor) = cursor.single_mut() else {
         return;
     };
@@ -203,6 +210,7 @@ pub(super) fn pointer_lock(
         want = false;
     }
     if want != lock.locked {
+        let was_locked = lock.locked;
         lock.locked = want;
         lock.lock_ever |= want;
         cursor.grab_mode = if want {
@@ -211,6 +219,7 @@ pub(super) fn pointer_lock(
             CursorGrabMode::None
         };
         cursor.visible = !want;
+        lock.released_this_frame = was_locked && !want;
     }
 }
 

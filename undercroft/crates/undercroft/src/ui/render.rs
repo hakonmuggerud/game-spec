@@ -116,6 +116,17 @@ impl PanelView {
 #[derive(Component)]
 pub struct ScreenRoot;
 
+/// The list-menu row this entity draws (`d.dataset.i` in `ui.js`), so `ui::mouse` can map a mouse
+/// `Interaction` back onto [`crate::ui::menu::MenuState::hover`] / `::activate` by index.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MenuRow(pub usize);
+
+/// A hub-screen `[n]` line (1-based, matching [`crate::ui::screens::TextScreen::picks`] and the
+/// digit keys) — the prototype's `[n]` lines were keyboard-only, but nothing stops a click from
+/// reaching the same [`crate::ui::screens::Pick`].
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PickLine(pub usize);
+
 /// Build the `.screen > .box` tree for one view.
 pub fn spawn_panel(commands: &mut Commands, font: &UiFont, v: &PanelView) {
     let root = commands
@@ -212,7 +223,13 @@ pub fn spawn_panel(commands: &mut Commands, font: &UiFont, v: &PanelView) {
     }
     for l in &v.lines {
         let dim = l.starts_with("  ");
-        line(commands, boxx, font, l, FS_BODY, if dim { DIM } else { FG });
+        let e = line(commands, boxx, font, l, FS_BODY, if dim { DIM } else { FG });
+        // A `[n]` line — dimmed or not — picks the same digit `ui::keys::menu_key` reads.
+        if let Some(n) = pick_line_index(l) {
+            commands
+                .entity(e)
+                .insert((PickLine(n), Interaction::default()));
+        }
     }
     if !v.items.is_empty() {
         let list = commands
@@ -244,6 +261,8 @@ pub fn spawn_panel(commands: &mut Commands, font: &UiFont, v: &PanelView) {
                     BorderColor::all(if sel { BORDER } else { Color::NONE }),
                     BackgroundColor(if sel { SEL_BG } else { Color::NONE }),
                     ChildOf(list),
+                    MenuRow(i),
+                    Interaction::default(),
                 ))
                 .id();
             // One text node with two spans: separate `Text` nodes cannot be made to share a baseline
@@ -329,6 +348,15 @@ fn dim_if_inert(line: &str, s: &TextScreen) -> String {
     } else {
         line.to_string()
     }
+}
+
+/// The 1-based digit a `[n]` line picks, regardless of a leading `"  "` dim prefix — mirrors
+/// [`dim_if_inert`]'s own parse so a locked/unaffordable row stays clickable exactly where the
+/// digit key reaches it.
+fn pick_line_index(line: &str) -> Option<usize> {
+    let rest = line.trim_start().strip_prefix('[')?;
+    let (n, _) = rest.split_once(']')?;
+    n.parse::<usize>().ok().filter(|n| *n >= 1)
 }
 
 /// `.mi` / `.mi.sel` / `.mi.dis` / `.mi.danger` colours.

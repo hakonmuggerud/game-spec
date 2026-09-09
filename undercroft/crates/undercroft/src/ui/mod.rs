@@ -18,6 +18,7 @@
 //! | [`fade`] | `#vignette` / `#flashfx` / `#fade` / `#toast` |
 //! | [`minimap`] | `hub.js:drawMinimap` |
 //! | [`keys`] | the `keydown` branches `player.rs` does not own |
+//! | [`mouse`] | `Interaction`-driven hover/click on the list-menu rows, hub `[n]` lines and the death/ending screens |
 //!
 //! Nothing here mutates game state: selections are pushed as [`crate::debug::DebugCommand`]s. The one
 //! exception is the toast queue ([`crate::resources::Toasts`]), which this lane owns outright.
@@ -27,6 +28,7 @@ pub mod hud;
 pub mod keys;
 pub mod menu;
 pub mod minimap;
+pub mod mouse;
 pub mod render;
 pub mod screens;
 pub mod style;
@@ -511,6 +513,22 @@ pub fn plugin(app: &mut App) {
             )
                 .chain(),
         );
+    // `mouse`'s systems read `ButtonInput<MouseButton>`, `CursorMoved` and the world lane's
+    // `PointerLock` — none of which the headless harness (no `InputPlugin`/`WindowPlugin`, no world
+    // lane) ever inserts. `crate::has_renderer` is the same gate `world::plugin` itself stands down
+    // on, so the two always agree on whether this app is the real one.
+    if crate::has_renderer(app) {
+        app.add_systems(
+            Update,
+            (
+                mouse::hover_rows,
+                mouse::click_rows,
+                mouse::click_screen_picks,
+                mouse::click_screen_cta,
+            )
+                .after(keys::route_keys),
+        );
+    }
 }
 
 #[cfg(test)]
