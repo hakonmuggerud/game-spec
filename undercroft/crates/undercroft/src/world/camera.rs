@@ -222,6 +222,29 @@ pub(super) fn on_resize(
     }
 }
 
+/// The camera's yaw and pitch this frame (`main.js:121` / `main.js:389`).
+///
+/// While `DYING` the death camera's frozen yaw wins and the pitch is level; the frozen yaw is
+/// dropped as soon as the mode is anything else. `mode` must be the *effective* mode
+/// ([`crate::state::Mode`]): `die()` queues `Dying` from `FixedUpdate` and Bevy only applies it in
+/// the next frame's `StateTransition`, so a plain `Res<State<GameMode>>` still reads `Zone` in the
+/// `PostUpdate` of the very frame [`on_sim_events`] set [`ScreenFx::death_yaw`] — and would throw
+/// it away before the death camera ever pointed anywhere.
+fn view_angles(
+    mode: GameMode,
+    fx: &mut ScreenFx,
+    player_yaw: f32,
+    player_pitch: f32,
+) -> (f32, f32) {
+    if mode != GameMode::Dying {
+        fx.death_yaw = None;
+    }
+    match fx.death_yaw {
+        Some(yaw) => (yaw, 0.0),
+        None => (player_yaw, player_pitch),
+    }
+}
+
 /// `main.js:118` — the camera *is* the player: position `(x, CFG.eye, z)`, rotation `YXZ(yaw, pitch)`,
 /// the sprint fov ease, then `applyFx`'s shake on top. Runs in `PostUpdate` so it sees this frame's
 /// fixed-tick results.
@@ -230,7 +253,7 @@ pub(super) fn follow_player(
     game: Game,
     player: Res<Player>,
     clock: Res<Clock>,
-    mode: Res<State<GameMode>>,
+    mode: crate::state::Mode,
     mut fx: ResMut<ScreenFx>,
     mut cam: Query<(&mut Transform, &mut Projection), With<WorldCamera3d>>,
 ) {
@@ -243,18 +266,7 @@ pub(super) fn follow_player(
         return;
     };
 
-    // `die()` turned the camera to face what took you and neither the player nor the creatures run
-    // while DYING, so the yaw stays frozen for the whole death camera.
-    let dying = *mode.get() == GameMode::Dying;
-    if !dying {
-        fx.death_yaw = None;
-    }
-    let yaw = fx.death_yaw.filter(|_| dying).unwrap_or(player.yaw);
-    let pitch = if dying && fx.death_yaw.is_some() {
-        0.0
-    } else {
-        player.pitch
-    };
+    let (yaw, pitch) = view_angles(mode.get(), &mut fx, player.yaw, player.pitch);
 
     // `applyFx(dt)`: a pitch jitter `amp · k · sin(28 t)` decaying over 0.25 s plus a 0.01 u eye dip.
     let mut shake_pitch = 0.0;
@@ -318,7 +330,7 @@ pub(super) fn on_sim_events(
     game: Game,
     zone: Res<ZoneRes>,
     player: Res<Player>,
-    mode: Res<State<GameMode>>,
+    mode: crate::state::Mode,
     mut fx: ResMut<ScreenFx>,
 ) {
     let Some(asset) = game.get() else {
@@ -328,7 +340,7 @@ pub(super) fn on_sim_events(
     for m in msgs.read() {
         match &m.0 {
             SimEvent::CreatureStep { d, .. } => {
-                if *mode.get() == GameMode::Zone && *d <= brute.shake_r {
+                if mode.get() == GameMode::Zone && *d <= brute.shake_r {
                     fx.shake(brute.shake_amp * (1.0 - d / brute.shake_r));
                 }
             }
@@ -396,6 +408,56 @@ mod tests {
             "the weaker shake does not lower the amplitude"
         );
         assert_eq!(fx.t, ScreenFx::DUR, "but it does restart the decay");
+    }
+
+    /// Regression: `die()` queues `Dying` from `FixedUpdate`, and Bevy applies a queued state
+    /// change in the *next* frame's `StateTransition`. Reading `State<GameMode>` in `PostUpdate`
+    /// therefore still says `Zone` in the frame [`on_sim_events`] set `death_yaw`, and cleared it
+    /// again before the camera ever turned. The effective mode ([`crate::state::Mode`]) is what
+    /// `main.js` read, and it keeps the death camera.
+    #[test]
+    fn the_death_camera_survives_the_frame_its_mode_change_was_queued_in() {
+        use crate::debug::DebugCommand;
+        use crate::headless::{headless_app, send, step};
+
+        let mut app = headless_app();
+        app.init_resource::<ScreenFx>();
+        app.world_mut()
+            .spawn((WorldCamera3d, Transform::default(), Projection::default()));
+        app.add_systems(Update, on_sim_events);
+        app.add_systems(PostUpdate, follow_player);
+
+        send(&mut app, DebugCommand::Begin);
+        step(&mut app, 0.2);
+        send(&mut app, DebugCommand::GotoZone("undercroft".to_string()));
+        step(&mut app, 0.5);
+        assert_eq!(crate::headless::mode(&app), GameMode::Zone);
+
+        send(&mut app, DebugCommand::Die);
+        // exactly the one frame `die()` runs in: `NextState` says `Dying`, `State` still `Zone`
+        step(&mut app, 1.0 / super::super::super::tick::TICK_HZ as f32);
+        assert_eq!(
+            crate::headless::mode(&app),
+            GameMode::Zone,
+            "the state transition has not been applied yet"
+        );
+        assert!(
+            app.world().resource::<ScreenFx>().death_yaw.is_some(),
+            "the death camera's yaw was cleared in the frame it was set"
+        );
+    }
+
+    /// [`view_angles`] itself: `Dying` freezes the yaw and levels the pitch, anything else drops it.
+    #[test]
+    fn view_angles_freeze_and_release_the_death_yaw() {
+        let mut fx = ScreenFx {
+            death_yaw: Some(0.75),
+            ..default()
+        };
+        assert_eq!(view_angles(GameMode::Dying, &mut fx, 0.1, 0.2), (0.75, 0.0));
+        assert_eq!(fx.death_yaw, Some(0.75));
+        assert_eq!(view_angles(GameMode::Dead, &mut fx, 0.1, 0.2), (0.1, 0.2));
+        assert_eq!(fx.death_yaw, None);
     }
 
     /// The death camera looks straight at the killer: yaw `atan2(−ux, −uz)`.
