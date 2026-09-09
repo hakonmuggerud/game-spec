@@ -7,8 +7,11 @@ SwiftShader WebGL) through `window.__game.actions`, so a Bevy screenshot from
 ```sh
 cd tools/qa && npm install                       # playwright-core only, no browser download
 python3 -m http.server 8765 --bind 0.0.0.0 --directory ../../..   # serves /prototype/
-node proto.mjs "wait 1; __game.actions.begin(); wait 2; __game.actions.gotoZone('undercroft'); wait 2" out.png
+node proto.mjs "wait 1; __game.actions.begin(); wait 2; shot hub.png; __game.actions.gotoZone('undercroft'); wait 2; shot zone.png"
 ```
 
-Steps are `;`-separated: `wait N` or any JS expression evaluated in the page. The script prints
-each expression's result and the final mode/player position.
+Steps are `;`-separated: `wait N` (game seconds, so it means the same as `wait` in
+`UNDERCROFT_SCRIPT`), `shot <path.png>`, or any JS expression evaluated in the page. The script
+prints each expression's result and, for every shot, the mode, game time and player position.
+The Bevy side of a comparison is the same step list as an `UNDERCROFT_SCRIPT` with `screenshot`
+in place of `shot`; see `PHASE2_LANES.md` §0 for the Xvfb recipe.
