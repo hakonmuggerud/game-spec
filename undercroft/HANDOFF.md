@@ -1,217 +1,190 @@
-# Handoff: The Undercroft → Bevy port
+# Handoff: The Undercroft → Bevy port — next step is "cut the cord"
 
-Written 2026-09-08 for resuming the port on a different machine. Everything below is on the
-`bevy-port` branch; `main` is still the Three.js prototype only.
+Written 2026-09-09 for a fresh session. Branch `bevy-port` (47 commits ahead of `main`, which is
+still the Three.js prototype only). Working tree clean at `804d19c`.
 
 ## 1. Where things stand
 
-The port follows "Option A": a data-first incremental port, wasm as the first playable target,
-native builds later. Four phases were planned:
+The Bevy port is functionally complete against the prototype:
 
-| Phase | Content | Status |
-|---|---|---|
-| 0 | Toolchain, cargo workspace, wasm pipeline | **Done 2026-09-08** on the "sandbox" Arch laptop (8 cores, 16 GB). Native and wasm smoke scenes both render. See §5 for timings and the two config fixes. |
-| 1 | Data extraction + headless sim crate | **Done.** 134 tests, clippy clean, parity-reviewed against the JS. |
-| 2 | Bevy shell (world, creatures, UI, hub, audio plugins) | **Done 2026-09-09.** Skeleton (`PHASE2_SKELETON.md`) + five lanes (`PHASE2_LANES.md`) + integration + verification. 171 app tests, 137 sim/data tests. A 15-step scripted playthrough matches the prototype frame for frame except the items in §7. Native and wasm both run. |
-| 3 | Parity checklists, wasm playtest, retire the JS | Not started. |
+| Phase | Status |
+|---|---|
+| 0 toolchain, wasm pipeline | done |
+| 1 data extraction + headless sim (`undercroft-data`, `undercroft-sim`) | done, 137 tests, parity-reviewed |
+| 2 Bevy shell: skeleton + world / creatures / ui / hub / audio lanes | done, 164 app tests, a 15-step scripted playthrough matches the prototype frame for frame |
+| 3 cut the cord (this handoff, §5) | **not started** |
 
-Commits on `bevy-port` (all after `44afca6`, the last prototype commit):
+Native (Linux, Xvfb or a real session) and wasm both run. The wasm dev bundle is served at
+`http://100.114.229.118:8765/undercroft/dist/` by a `python3 -m http.server 8765` that may or may
+not still be running; the prototype is next to it at `/prototype/index.html`.
 
-```
-Phase 1 contract: data types, exporter, RON data, grid core
-Phase 1 world lane: pools, collision, map validator
-Phase 1 creatures lane: port hunter.js to undercroft-sim::creature
-Phase 1 economy lane: contracts, follower, economy, save
-(merges)  Phase 1: merge lanes, clippy clean
-Phase 1: parity fixes from review
-Handoff document, lift the build-job cap
-Phase 0: native + wasm smoke scenes render
-Phase 2 skeleton: contract and work split
-Phase 2 skeleton: stage 1 foundation
-Phase 2 skeleton: run lane / player lane (merged)
-Phase 2 skeleton: tests
-Phase 2 skeleton: verification fixes
-Phase 2 skeleton: owner review (clock, save flush)
-Phase 2 lanes: prep / contract / world / creatures / hub / ui / audio (merged)
-Phase 2 integration: … (5 commits)   Phase 2 verification: … (4 commits)
-tools/qa: headless Chromium driver for prototype reference screenshots
-```
+The owner has tried the wasm build and accepted it. The remaining visual deltas found by
+verification (flat death vignette, menu panels ~65 px narrower, chunkier hub embers, slashed-zero
+font, missing hub stairwell steps, a Brute smash applied one tick late) were **deliberately
+discarded**: do not work on them unless asked. The acceptance-checklist tests (DESIGN.md §13/§5.9)
+and a full human playtest were also not requested; they stay optional.
+
+History of how Phase 2 was run is in `PHASE2_SKELETON.md` and `PHASE2_LANES.md` (contracts written
+for the agents; still accurate about ownership, resources and conventions).
 
 ## 2. Layout
 
 ```
-prototype/          the Three.js prototype — READ-ONLY reference, do not edit
-undercroft/         this workspace
-  Cargo.toml        workspace; every third-party dep declared once here; default-members = data + sim
-  .cargo/config.toml  clang + mold linker on Linux; wasm runner
-  rust-toolchain.toml stable + wasm32-unknown-unknown target
-  Trunk.toml, web/index.html   wasm build shell (never exercised yet)
-  crates/undercroft-data   engine-neutral types, RON/text loaders, parse_map, json2ron bin
-  crates/undercroft-sim    grid, pool, collision, validate, world (doors), creature/, contracts,
-                           follower, economy, save, events, player, rng, fixtures
-  crates/undercroft        the Bevy app: skeleton files at src/ (PHASE2_SKELETON.md §1), one
-                           directory per lane (world, creatures, ui, hub, audio; PHASE2_LANES.md §1),
-                           src/model.rs = the shared voxel-model builder
-  assets/audio/            59 pre-rendered one-shots + manifest (tools/export/audio renders them)
-  assets/ui/               the HUD/menu font (Adwaita Mono, OFL)
-  tools/qa/                headless-Chromium driver for prototype reference screenshots
-  assets/data/             RON tables + maps/*.txt, generated, committed
-  assets/fixtures/         parity fixtures generated by the JS code, committed (README inside)
-  tools/export/            node exporter: JS modules → JSON → (json2ron) → RON + fixtures
+prototype/                  the Three.js prototype: READ-ONLY reference until §5 moves it
+  src/*.js                  authoritative for every game number until §5 flips that
+  DESIGN.md                 the design doc (§12 describes the JS module layout; §13 acceptance list)
+  index.html, models.html, README.md
+undercroft/                 cargo workspace (README.md there is stale in places; §5 fixes it)
+  Cargo.toml                workspace; default-members = data + sim so bare cargo test is cheap
+  crates/undercroft-data    engine-neutral types, RON/map loaders, parse_map, json2ron bin
+  crates/undercroft-sim     pure game logic; returns Vec<SimEvent>; SimRng for determinism
+  crates/undercroft         the Bevy app: src/{lib,main,state,assets,resources,messages,debug,
+                            tick,headless,run,player,model}.rs + src/{world,creatures,ui,hub,audio}/
+  assets/data/              RON tables + maps/*.txt, GENERATED by the exporter (headers say so)
+  assets/fixtures/          parity fixtures generated by the JS (sim tests read them)
+  assets/audio/             59 one-shot WAVs + manifest.ron, rendered from audio.js by node
+  assets/ui/                Adwaita Mono font (OFL)
+  tools/export/             node: prototype JS modules → JSON → json2ron → RON + fixtures
+  tools/export/audio/       node: audio.js SOUNDS → WAVs via node-web-audio-api
+  tools/qa/                 node: headless Chromium driver for prototype reference screenshots
+  web/index.html, Trunk.toml  wasm shell
+  HANDOFF.md (this), PHASE2_SKELETON.md, PHASE2_LANES.md
 ```
 
-Architecture: **functional core, ECS shell.** The sim crate exposes plain structs and pure
-functions and returns `Vec<SimEvent>`; it never performs side effects. Bevy will own entities and
-lifetimes and call into the sim from `FixedUpdate`. There is no separate "sim world" to sync.
-The JS source is authoritative for numbers; `prototype/DESIGN.md` explains intent (§5 creatures,
-§3 grid, §12 events); some of its tables are stale (e.g. start oil), the RON is what the JS does.
+## 3. Machine
 
-## 3. Setting up a new machine
+This laptop ("sandbox", Arch) is fully set up: rustup stable 1.98 + wasm32 target, clang/mold,
+trunk 0.21.14 in `~/.cargo/bin` (add to PATH), Xvfb + lavapipe for headless GL, Chromium +
+playwright-core for the prototype driver, node 26. Details in `~/.claude/CLAUDE.md`. For another
+machine: rustup, clang+mold (or lld), Bevy's Linux libs (alsa, udev, wayland, xkbcommon, x11,
+xcursor, xrandr, xi, mesa), trunk; a cold Bevy build is 15–25 min and needs 8 GB+.
 
-Any OS works; Linux is what has been used. Budget: a clean debug build of Bevy 0.19 takes
-roughly 10–25 minutes on a 4–8 core machine and peaks above 4 GB of RAM. 8 GB+ recommended.
+## 4. Build, test, run, compare
 
-### 3.1 Rust
+Always `export PATH="$HOME/.cargo/bin:$PATH"` and work from `undercroft/`.
 
 ```sh
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-source ~/.cargo/env
-rustup component add clippy rustfmt
-rustup target add wasm32-unknown-unknown      # rust-toolchain.toml also requests it
+cargo test                                                     # data + sim, 137 tests, ~1 min cold
+cargo test -p undercroft --features dev                        # app, 164 + 10 integration; headless
+cargo clippy --workspace --all-targets --features undercroft/dev -- -D warnings
+cargo fmt --all -- --check
+CARGO_TARGET_DIR=target-wasm cargo check -p undercroft --target wasm32-unknown-unknown
+CARGO_TARGET_DIR=target-wasm trunk build                       # dist/, ~80 s incremental, 106 MB dev wasm
 ```
 
-Rust 1.98 stable was used; Bevy 0.19.1 needs ≥ 1.95.
-
-### 3.2 C toolchain and linker
-
-- **Debian/Ubuntu:** `sudo apt install build-essential clang lld mold pkg-config`
-- **Fedora:** `sudo dnf install gcc clang lld mold pkgconf-pkg-config`
-- **macOS:** Xcode command line tools. `.cargo/config.toml` only sets the linker for
-  `x86_64-unknown-linux-gnu`, so nothing to change; optionally add an `[target.aarch64-apple-darwin]`
-  block using `-fuse-ld=lld` after `brew install llvm`.
-- **Windows:** MSVC build tools; the config's Linux block is ignored. Consider `-C linker=rust-lld`.
-
-### 3.3 Bevy Linux system libraries (skip on macOS/Windows)
+Native scripted run with screenshots (no window manager needed):
 
 ```sh
-sudo apt install libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev \
-                 libx11-dev libxcursor-dev libxrandr-dev libxi-dev libgl1-mesa-dev
+Xvfb :90 -screen 0 1280x800x24 >/dev/null 2>&1 &
+DISPLAY=:90 WINIT_UNIX_BACKEND=x11 VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json WGPU_BACKEND=vulkan \
+UNDERCROFT_SAVE=/tmp/save.json \
+UNDERCROFT_SCRIPT="wait 1; begin; wait 2; gotoZone undercroft; wait 2; screenshot /tmp/a.png; wait 1; quit" \
+cargo run -p undercroft --features dev
 ```
 
-### 3.4 Web toolchain
+Grammar on `DebugCommand::parse` in `crates/undercroft/src/debug.rs`: every debug action by its
+JS name (`begin`, `unlockAll`, `gotoZone id`, `teleport x z yaw`, `key KeyE`, `openMenu kind id`,
+`spawnHunter cx cz profile`, …) plus `wait N`, `screenshot path`, `quit`. Keep a `wait` between
+`screenshot` and `quit`. The same step list drives the prototype through `tools/qa/proto.mjs`
+(`shot path` instead of `screenshot`; README there), which is how parity was checked.
 
-- `trunk` 0.21.x: download the prebuilt binary from
-  https://github.com/trunk-rs/trunk/releases into `~/.cargo/bin`, or `cargo install trunk --locked`.
-  Trunk downloads a matching `wasm-bindgen` itself.
-- `wasm-opt` (package `binaryen`) is optional; `web/index.html` sets `data-wasm-opt="0"` for dev.
+`headless_app()` in `crates/undercroft/src/headless.rs` is the test harness; `tests/skeleton.rs`
+shows the idioms (`send`, `step`, `log`, `mode`).
 
-### 3.5 Only if you regenerate the data (not needed to build)
+## 5. Phase 3: cut the cord
 
-Node 22 + npm, then `cd undercroft/tools/export && npm install && node export.mjs` and
-`cargo run -p undercroft-data --bin json2ron`. See `tools/export/README.md`.
+Goal: the Rust workspace no longer depends on, references, or is explained in terms of the JS
+prototype; the RON data is the source of truth; the prototype survives only as a frozen reference.
+Nothing here changes game behaviour, so every test must stay green throughout and the scripted
+playthrough must still match its own earlier screenshots.
 
-### 3.6 Optional later: headless browser QA
+Work in this order; each numbered item is a good commit.
 
-The prototype's QA used Playwright + headless Chromium driven through `window.__game`. The
-equivalent for the port is headless `cargo test` with `MinimalPlugins` (Phase 2 skeleton);
-Playwright only matters again for the wasm build.
+1. **Freeze the reference.** `git mv prototype reference/prototype`. Add `reference/README.md`
+   saying it is the frozen Three.js prototype the port was verified against, not to be edited,
+   and how to serve it for a side-by-side (`tools/qa`). Fix every path that pointed at
+   `../prototype`: `tools/export/export.mjs`, `tools/export/hooks.mjs`, `tools/export/README.md`,
+   `tools/export/audio/render.mjs` + README, `tools/qa/proto.mjs` + README (URL path
+   `/reference/prototype/index.html`), `undercroft/README.md`, and the eleven doc comments in
+   `crates/*/src` that cite `prototype/src/*.js` (keep the citations, they are useful history;
+   just make the path right, e.g. `reference/prototype/src/hunter.js`). `grep -rn "prototype/"`
+   across the repo until only `reference/prototype/...` remains.
 
-## 4. Build and test
+2. **Make the RON the source of truth.**
+   - Strip the "generated … Do not edit by hand" header from every `assets/data/*.ron` and
+     replace it with one line naming the file's purpose and the Rust type it deserialises into.
+   - Move `tools/export/` (data exporter, `hooks.mjs`, its package files) to
+     `reference/tools/export/` and mark its README "historical: regenerated the RON from the JS
+     during the port; the RON is now edited directly". Keep `tools/export/audio/` where it is only
+     if the WAVs are still meant to be re-rendered from `reference/prototype/src/audio.js`;
+     otherwise move it too and treat `assets/audio/*.wav` + `manifest.ron` as source. Recommend:
+     move it; the WAVs are committed and the Rust synth already defines the continuous layers.
+   - Delete the `json2ron` binary (`crates/undercroft-data/src/bin/json2ron.rs`) and any serde
+     `Deserialize` impls or `#[serde(rename)]`s that exist only to read the exporter's JSON; keep
+     the RON derives. Check `DATA_VERSION` and the data crate's module docs, which describe the
+     export flow.
+   - `assets/fixtures/`: keep the JSON files as frozen golden data (the sim tests read them); edit
+     the README to say they are frozen outputs of the reference prototype and cannot be
+     regenerated after this step; drop the "regenerate with" instructions.
+   - Add a test in `undercroft-data` that loads every RON file and fails with a readable message
+     naming the file and line on a parse error (hand-editing now needs that).
 
-```sh
-cd undercroft
-cargo test                                    # data + sim only, ~1 min first time, 134 tests
-cargo clippy --all-targets -- -D warnings     # clean at handoff
-cargo build -p undercroft --features dev      # Bevy app, native, dynamic linking. NEVER FINISHED YET
-cargo run   -p undercroft --features dev      # should show a lit spinning cube
-trunk build                                   # wasm → dist/ (never run yet)
-```
+3. **Move the design doc into the workspace and update it.** `git mv reference/prototype/DESIGN.md
+   undercroft/DESIGN.md` (leave a one-line pointer file behind). Rewrite §12 ("Modules, ctx and
+   events") for the Rust layout: the three crates, the skeleton files, the five plugin directories,
+   `SimEvent` as the event vocabulary (`crates/undercroft-sim/src/events.rs` has the full list
+   with JS names), `SimMessage`/`EventLog`, `DebugCommand` as the debug API replacing
+   `window.__game.actions`, the 60 Hz `FixedUpdate` and `SimSet` order, `state::Mode`. Replace the
+   `file.js:function` citations throughout the document with the Rust module/function where one
+   exists (the doc comments on every ported item name their JS origin, so `grep -rn "hunter.js:"`
+   finds the mapping). Leave the tables of numbers alone; the RON is now the truth for those, and a
+   sentence at the top of the document should say so and name the RON files. Keep §13 as the
+   acceptance checklist.
 
-`default-members` excludes the app crate, so bare `cargo test`/`cargo build` are always cheap.
-The `dev` feature (dynamic linking + file watcher) is native-only; never enable it for wasm.
+4. **Retire the old rules.** In this file's §7 and in `PHASE2_SKELETON.md` §0 / `PHASE2_LANES.md`
+   §0 the rule "never hand-edit `assets/data/*.ron`; change the JS and regenerate" flips to "the
+   RON is the source; keep `cargo test` green (fixtures pin the old numbers, so a deliberate tuning
+   change that breaks a fixture test must update the fixture in the same commit)". Also drop
+   "one author per file / lanes own disjoint modules" as a standing rule; it was for the parallel
+   agents.
 
-Serving the wasm build and the reference prototype on the tailnet, as before:
+5. **Docs and the top level.** Rewrite `undercroft/README.md` (currently says data is never typed
+   by hand, cites the exporter, and has an old tailnet IP). Update the repo root `README.md` to
+   point at `undercroft/` as the game and `reference/` as history. Move `PHASE2_SKELETON.md` and
+   `PHASE2_LANES.md` to `undercroft/docs/history/`. Rewrite this `HANDOFF.md` into a short
+   "how to work on the game" section of `undercroft/README.md` and delete it.
 
-```sh
-python3 -m http.server 8765 --bind 0.0.0.0 --directory /path/to/game-spec
-# http://<host>:8765/undercroft/dist/        Bevy
-# http://<host>:8765/prototype/index.html    Three.js reference
-```
+6. **Merge to main.** `git checkout main && git merge bevy-port` (fast-forward; `main` has no
+   commits since `44afca6`). Tag `v0.3-bevy-port`. Delete the `bevy-port` branch.
 
-## 5. Phase 0 results (2026-09-08, "sandbox" Arch laptop, i7-7700HQ 8 threads, 16 GB)
+7. **Optional, one commit, only if wanted afterwards:** a release wasm build (`trunk build
+   --release` with `wasm-opt` enabled in `web/index.html`, and `[profile.release]` `opt-level =
+   "z"`/`lto`), which turns the 106 MB dev bundle into something loadable in seconds.
 
-All three checks pass. Timings, measured with the native and wasm builds running concurrently,
-so each alone is faster:
+Verification for the whole step: the five commands in §4 all green; `grep -rn "prototype/"` finds
+only `reference/` paths; the scripted playthrough (`begin; wait 2; unlockAll; wait 1; screenshot;
+gotoZone undercroft; wait 2; screenshot`) produces the same frames as before the step (compare
+mean luminance or just look); `trunk build` succeeds and the served page reaches the hub.
 
-| Step | Result |
-|---|---|
-| `cargo test` | 134 passing, 47 s cold |
-| `cargo build -p undercroft --features dev` | 24.5 min cold; incremental `cargo clippy` of the sim is ~30 s |
-| `trunk build` | 16 min cold; `dist/undercroft_bg.wasm` is ~100 MB in the dev profile (debuginfo) |
+## 6. Things a new session should know
 
-Two config fixes were needed and are committed:
+- Light units: JS candela go straight into `PointLight`/`SpotLight::intensity` and emissives
+  carry exposure weight 0, because the world camera runs at `world::palette::EXPOSURE_EV100`.
+- Inside `FixedUpdate` always read the mode through `state::Mode` (pending state wins), never
+  `State<GameMode>` directly; two bugs came from that.
+- Lanes only push `DebugCommand`s to change game state; `run.rs`/`player.rs` are the writers.
+  Exceptions on record: world writes `MoveIntent`, hub writes `HubMap.mask`, audio owns
+  `save.audio`, ui writes `Toasts`.
+- `headless_app()` uses an in-memory save store; the real app uses `./undercroft-save.json`
+  natively (`UNDERCROFT_SAVE` overrides) and `localStorage` on the web.
+- Xvfb + lavapipe screenshots occasionally save an empty frame; re-run rather than debug.
+- Copying `target/` per git worktree avoids a cross-worktree cache bug in `undercroft-data`
+  (baked `CARGO_MANIFEST_DIR`); if headless tests suddenly fail on a clean tree,
+  `cargo clean -p undercroft-data -p undercroft-sim -p undercroft`.
 
-- `web/index.html`: the `rel="rust"` link needs `href="../crates/undercroft/Cargo.toml"`; Trunk
-  otherwise looks for a manifest next to the HTML file.
-- getrandom 0.3 (pulled in by rand 0.9) refuses to compile for wasm32 without the `wasm_js`
-  backend: `getrandom = { version = "0.3", features = ["wasm_js"] }` as a wasm32-only dep of the
-  sim crate, plus `--cfg getrandom_backend="wasm_js"` in `.cargo/config.toml`.
+## 7. Conventions to keep
 
-Running natively over SSH (no X session on the host): start `Xvfb :99`, then run with
-`DISPLAY=:99 WINIT_UNIX_BACKEND=x11 VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json` so wgpu
-picks the lavapipe software Vulkan adapter, and grab frames with `xwd -root | magick xwd:- out.png`.
-Always launch through `cargo run` (or set `LD_LIBRARY_PATH` to `target/debug/deps` and the rustlib
-dir): the `dev` feature links Bevy dynamically. For the wasm build, the agent-sandbox container's
-Firefox can load `http://100.114.229.118:8765/undercroft/dist/` and `docker exec sandbox screenshot`
-captures it. The GTX 1050 Ti was not used; the NVIDIA Vulkan ICD needs a real X/Wayland session.
-
-`trunk build` uses `CARGO_TARGET_DIR=target-wasm` in practice so it never invalidates the native
-`target/`; both directories are git-ignored.
-
-## 6. Phase 2 result: the Bevy shell
-
-The skeleton and all five lanes are merged. How to drive and compare:
-
-- Native scripted run (no window manager needed): see `PHASE2_LANES.md` §0 for the Xvfb recipe;
-  `UNDERCROFT_SCRIPT="wait 1; begin; wait 2; gotoZone undercroft; wait 2; screenshot /tmp/a.png; wait 1; quit"`.
-  The grammar is on `DebugCommand::parse` in `debug.rs` (`wait`, `screenshot`, `quit` plus every
-  debug action by its JS name). Put a `wait` between `screenshot` and `quit`.
-- Prototype reference for the same steps: `tools/qa/proto.mjs` (README there). Waits in both are
-  game seconds, so one step list serves both sides.
-- Wasm: `CARGO_TARGET_DIR=target-wasm trunk build` (13 min cold, ~1.5 min incremental; 106 MB dev
-  bundle), serve the repo, open `/undercroft/dist/`. There is no `?script=` yet (TODO in `debug.rs`).
-- Light units: JS candela go straight into `PointLight`/`SpotLight::intensity` and emissives carry
-  exposure weight 0, because the world camera runs at `world::palette::EXPOSURE_EV100`. Keep it that
-  way; two lanes independently tuned other factors and both were wrong under the merged camera.
-- Tests: `cargo test -p undercroft --features dev` (161 lib + 10 integration; `headless_app()` is
-  the harness) and `cargo test` (data + sim).
-
-## 7. Phase 3
-
-Port `prototype/DESIGN.md` §13 (acceptance) and §5.9 (creatures) as headless tests where they are
-not already; playtest the wasm build over the tailnet against the JS prototype side by side;
-update `DESIGN.md` §12 for the Rust layout; move `prototype/` to a reference folder only once the
-Bevy build passes both checklists.
-
-Known deltas left by the Phase 2 verification (all small, none blocking a playtest):
-
-1. Hub minimap lacks the building markers (`hub.js:779`); zone minimap lacks NPC dots (`hub.js:795`).
-2. Death / low-oil vignette is a flat wash, not the CSS radial gradient (`prototype/index.html:31`).
-3. Menu panels are ~65 px narrower than the prototype's, sub-lines keep their two leading spaces,
-   foot lines are left-aligned; the font's slashed zero reads like an 8 at 14 px.
-4. `debug.rs` `TODO(wasm)`: no `?script=` URL parameter, so wasm cannot be driven headlessly.
-5. `Quit` should flush pending screenshots.
-6. Hub embers are chunkier than the prototype's point sprites.
-7. A Brute lantern smash is applied after the whole creature update batch (one tick late for the
-   other hunters).
-8. `world.js:stairsDown` is built inline in the JS and not in `models.ron`; the hub stairwell has
-   the hole and the landing lamp but no steps.
-
-## 8. Conventions to keep
-
-- One author per file; lanes own disjoint modules; shared types are fixed before a fan-out.
-- Doc comments on public items cite the JS origin (`file:function`).
-- No hidden globals; state changes return `Vec<SimEvent>`.
-- Randomness only through `sim::SimRng` so tests are deterministic.
-- Never hand-edit `assets/data/*.ron` while the JS prototype is still the reference; change the
-  JS or the exporter and regenerate. After Phase 3 the RON becomes the source of truth.
+- Doc comments on public items cite their origin (JS file:function until §5.3 rewrites them).
+- No hidden globals; the sim returns `Vec<SimEvent>`; randomness through `SimRng`.
+- The app crate never uses `std::fs`/`std::thread`/`Instant` outside `cfg(not(wasm32))`.
+- Never hand-edit `assets/data/*.ron` — until §5.2 lands. After it: edit freely, keep tests green.
