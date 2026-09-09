@@ -19,9 +19,8 @@
 //! | [`minimap`] | `hub.js:drawMinimap` |
 //! | [`keys`] | the `keydown` branches `player.rs` does not own |
 //!
-//! Nothing here mutates game state: selections are pushed as [`crate::debug::DebugCommand`]s. The two
-//! exceptions are documented in the lane report — the toast queue ([`crate::resources::Toasts`]), which
-//! this lane owns outright, and the `minimap {on}` event, which has no other owner.
+//! Nothing here mutates game state: selections are pushed as [`crate::debug::DebugCommand`]s. The one
+//! exception is the toast queue ([`crate::resources::Toasts`]), which this lane owns outright.
 
 pub mod fade;
 pub mod hud;
@@ -39,14 +38,13 @@ use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 
 use undercroft_sim::economy;
-use undercroft_sim::player::Carried;
+
 use undercroft_sim::{contracts, SimEvent};
 
 use crate::messages::SimMessage;
 use crate::resources::{Game, HubMapRes, HubRes, Player, SaveRes, Toasts, ZoneRes};
-use crate::run::EndingScreenRes;
+use crate::run::{EndingScreenRes, LastDeath, MenuTargetRes, MinimapRes};
 use crate::state::{GameMode, MenuKind, Mode, PrevMode};
-use crate::tick::SimSet;
 use menu::{MenuCtx, MenuState, PanelKind};
 use minimap::{MiniCanvas, MiniItem, MiniMarks, MiniShortcut};
 use render::{PanelView, ScreenRoot};
@@ -83,28 +81,12 @@ pub struct UiState {
     pub death_red: bool,
     /// `ctx.state.hintOverride`.
     pub hint_override: String,
-    /// `state.lostLoot` / `state.lostAny` for the death screen.
-    pub lost: String,
-    pub lost_any: bool,
-    /// `ctx.player.carried` as of the top of the current fixed tick, so the death screen can name what
-    /// was dropped (`economy::die` clears it and `DeathOutcome.lost` is not stored anywhere).
-    pub carried_at_tick: Carried,
-    /// `blessingKept.kept` seen this tick, subtracted from the snapshot.
-    pub blessing_kept: Option<Carried>,
-    /// `#minimap.hidden`.
-    pub minimap_on: bool,
-    /// A Tab press or the Cartographer's `[1]` this frame.
-    pub minimap_toggle_requested: bool,
     /// `HUB_CFG.minimapHz` throttle.
     pub minimap_t: f32,
     /// `main.js:resetArmedT`.
     pub reset_armed_t: f32,
     /// "Save wiped." waits for `saveReset`'s flush to land first (`main.js:562`).
     pub wipe_toast_pending: bool,
-    /// The building a `build` / `service` menu was opened on (`hub.js:openBuilding`).
-    pub menu_building: Option<(String, bool)>,
-    /// The resident a `dialog` menu was opened on (`npcTalk`).
-    pub menu_npc: Option<String>,
 }
 
 /// The minimap's texture handle.
@@ -172,16 +154,11 @@ fn setup(
 }
 
 /// `ui.js:init`'s listeners, plus the two the HUD needs from `hub.js` / `endgame.js`.
-#[allow(clippy::too_many_arguments)]
 fn read_events(
     mut r: MessageReader<SimMessage>,
     game: Game,
     mut ui: ResMut<UiState>,
     mut toasts: ResMut<Toasts>,
-    save: Res<SaveRes>,
-    hub: Res<HubRes>,
-    hub_map: Res<HubMapRes>,
-    player: Res<Player>,
 ) {
     let Some(asset) = game.get() else {
         return;
@@ -208,20 +185,11 @@ fn read_events(
                     ui.seen_t = 2.0;
                 }
             }
-            SimEvent::BlessingKept { kept, .. } => ui.blessing_kept = Some(*kept),
             SimEvent::Death { .. } => {
                 ui.death_red = true;
-                // `main.js:368` — the hint line while the death camera runs.
+                // `main.js:368` — the hint line while the death camera runs. What was lost is
+                // `run.rs`'s `LastDeath`, straight off the `DeathOutcome`.
                 ui.hint_override = "The dark took you.".to_string();
-                let mut lost = ui.carried_at_tick;
-                if let Some(k) = ui.blessing_kept.take() {
-                    lost.oil = lost.oil.saturating_sub(k.oil);
-                    lost.relic = lost.relic.saturating_sub(k.relic);
-                    lost.rich = lost.rich.saturating_sub(k.rich);
-                    lost.quest = lost.quest.saturating_sub(k.quest);
-                }
-                ui.lost_any = lost.total() > 0;
-                ui.lost = economy::describe(&lost);
             }
             SimEvent::HubEnter => {
                 ui.death_red = false;
@@ -238,33 +206,6 @@ fn read_events(
                     ui.wipe_toast_pending = false;
                     toasts.0.push_back("Save wiped.".to_string());
                 }
-            }
-            SimEvent::Minimap { on } => ui.minimap_on = *on,
-            SimEvent::NpcTalk { id } => ui.menu_npc = Some(id.clone()),
-            SimEvent::MenuOpen { kind } => {
-                // `hub.js:openBuilding(id)` — which building the panel is for. `player.rs` pushes
-                // `OpenMenu(kind)` without the id, so it is resolved from the same sim call it used.
-                if matches!(kind.as_str(), "build" | "service") {
-                    ui.menu_building = hub_map.0.as_ref().and_then(|h| {
-                        economy::hub_interact_target(
-                            &asset.data,
-                            &save.0,
-                            &hub.0,
-                            &h.map,
-                            player.x,
-                            player.z,
-                        )
-                        .and_then(|t| match t {
-                            economy::HubInteract::Build { id, .. } => Some((id, false)),
-                            economy::HubInteract::Building { id, .. } => Some((id, true)),
-                            economy::HubInteract::Descend { .. } => None,
-                        })
-                    });
-                }
-            }
-            SimEvent::MenuClose { .. } => {
-                ui.menu_building = None;
-                ui.menu_npc = None;
             }
             _ => {}
         }
@@ -297,19 +238,17 @@ pub struct ScreenSource<'w> {
     pub ending: Res<'w, EndingScreenRes>,
     /// `ui.js:showPause(state.prevMode === 'ZONE')`.
     pub prev: Res<'w, PrevMode>,
+    /// `main.js:die`'s outcome (`state.lostLoot` / `state.lostAny`).
+    pub death: Res<'w, LastDeath>,
+    /// The building / resident the open menu belongs to (`hub.js:openBuilding`, `npc.js:talk`).
+    pub menu_target: Res<'w, MenuTargetRes>,
 }
 
-/// `ui.js:showTitle` / `showPause` / `showMenu` / `showDeath` / `endgame.render*` in one place: decide
-/// which panel the current mode wants, then rebuild the node tree only when it changed.
-fn update_screens(
-    mut commands: Commands,
-    src: ScreenSource,
-    mode: Mode,
-    font: Option<Res<UiFont>>,
-    mut ui: ResMut<UiState>,
-    roots: Query<Entity, With<ScreenRoot>>,
-) {
-    let (Some(font), Some(asset)) = (font, src.game.get()) else {
+/// `ui.js:showTitle` / `showPause` / `showMenu` / `showDeath` / `endgame.render*` in one place:
+/// decide which panel the current mode wants and drive the list-menu stack. Pure state — no font,
+/// no entities — so the menu machine also runs in a headless app (`ui::tests`).
+fn update_screens(src: ScreenSource, mode: Mode, mut ui: ResMut<UiState>) {
+    let Some(asset) = src.game.get() else {
         return;
     };
     let data = &asset.data;
@@ -347,17 +286,31 @@ fn update_screens(
         ui.menu_root = want_root;
     }
 
-    ui.text_screen = text_screen(&src, &ui, m, tier);
+    ui.text_screen = text_screen(&src, m, tier);
 
     let ctx = ui.menu_ctx.clone();
-    let view = match ui.menu.view(&ctx) {
+    ui.view = match ui.menu.view(&ctx) {
         Some(v) => Some(PanelView::from_menu(&v)),
         None => ui.text_screen.as_ref().map(PanelView::from_text),
     };
-    if view == ui.view {
+}
+
+/// The node half of [`update_screens`]: rebuild the `bevy_ui` tree whenever [`UiState::view`]
+/// changes. Needs the font, so it stands down in an app without `bevy_text`.
+fn render_panels(
+    mut commands: Commands,
+    font: Option<Res<UiFont>>,
+    ui: Res<UiState>,
+    roots: Query<Entity, With<ScreenRoot>>,
+    mut drawn: Local<Option<PanelView>>,
+) {
+    let Some(font) = font else {
+        return;
+    };
+    if *drawn == ui.view {
         return;
     }
-    ui.view = view;
+    drawn.clone_from(&ui.view);
     for e in &roots {
         commands.entity(e).despawn();
     }
@@ -367,21 +320,21 @@ fn update_screens(
 }
 
 /// Which `#menu`-style screen the mode asks for.
-fn text_screen(src: &ScreenSource, ui: &UiState, m: GameMode, tier: u32) -> Option<TextScreen> {
+fn text_screen(src: &ScreenSource, m: GameMode, tier: u32) -> Option<TextScreen> {
     let data = &src.game.get()?.data;
     let save = &src.save.0;
     match m {
-        GameMode::Dead => Some(screens::death(&ui.lost, ui.lost_any)),
+        GameMode::Dead => Some(screens::death(&src.death.lost, src.death.lost_any)),
         GameMode::Ending => screens::ending(data, save, tier, &src.ending.0),
         GameMode::Menu => match src.kind.0.as_deref()? {
             "board" => Some(screens::board(data, save, tier)),
             "build" => {
-                let (id, _) = ui.menu_building.as_ref()?;
+                let id = src.menu_target.0.as_deref()?;
                 screens::build_menu(data, save, tier, id)
             }
             "service" => {
-                let (id, _) = ui.menu_building.as_ref()?;
-                match id.as_str() {
+                let id = src.menu_target.0.as_deref()?;
+                match id {
                     "board" => Some(screens::board(data, save, tier)),
                     "workshop" => Some(screens::workshop(data, save)),
                     "press" => Some(screens::press(data, save)),
@@ -391,7 +344,7 @@ fn text_screen(src: &ScreenSource, ui: &UiState, m: GameMode, tier: u32) -> Opti
                     _ => None,
                 }
             }
-            "dialog" => screens::dialog(data, save, ui.menu_npc.as_deref()?),
+            "dialog" => screens::dialog(data, save, src.menu_target.0.as_deref()?),
             _ => None,
         },
         _ => None,
@@ -430,33 +383,6 @@ fn loaded_or_parsed(src: &ScreenSource, id: &str) -> Option<undercroft_data::Par
     src.game.get()?.data.parse_zone(id)?.ok()
 }
 
-/// `main.js`'s `KEYS.minimap` branch plus `hub.js:onMinimapToggle` — the Cartographer's Table gate.
-fn toggle_minimap(
-    mut ui: ResMut<UiState>,
-    save: Res<SaveRes>,
-    mut toasts: ResMut<Toasts>,
-    mut w: MessageWriter<SimMessage>,
-) {
-    if !ui.minimap_toggle_requested {
-        return;
-    }
-    ui.minimap_toggle_requested = false;
-    if !save.0.buildings.cart {
-        if ui.minimap_on {
-            ui.minimap_on = false;
-        }
-        toasts.0.push_back(
-            "You have no map of this place. Ines could draw one — Cartographer's Table."
-                .to_string(),
-        );
-        w.write(SimMessage(SimEvent::ui_error()));
-        return;
-    }
-    ui.minimap_on = !ui.minimap_on;
-    // Nothing else owns `minimap {on}`: `debug.rs` has no toggle command (see the lane report).
-    w.write(SimMessage(SimEvent::Minimap { on: ui.minimap_on }));
-}
-
 /// `hub.js:drawMinimap()` at `HUB_CFG.minimapHz`.
 #[allow(clippy::too_many_arguments)]
 fn update_minimap(
@@ -469,6 +395,7 @@ fn update_minimap(
     zone: Res<ZoneRes>,
     hub_map: Res<HubMapRes>,
     player: Res<Player>,
+    minimap: Res<MinimapRes>,
     image: Option<Res<MinimapImage>>,
     images: Option<ResMut<Assets<Image>>>,
     mut node: Query<&mut Node, With<MinimapNode>>,
@@ -481,7 +408,7 @@ fn update_minimap(
         other => other,
     };
     let hub_mode = matches!(m, GameMode::Hub | GameMode::Title);
-    let showing = ui.minimap_on && matches!(m, GameMode::Hub | GameMode::Zone);
+    let showing = minimap.0 && matches!(m, GameMode::Hub | GameMode::Zone);
     if let Ok(mut n) = node.single_mut() {
         let want = if showing {
             Display::Flex
@@ -566,26 +493,18 @@ fn update_minimap(
     }
 }
 
-/// `ctx.player.carried` at the top of the fixed tick, before anything in it can clear the loot.
-fn snapshot_carried(player: Res<Player>, mut ui: ResMut<UiState>) {
-    if ui.carried_at_tick != player.carried {
-        ui.carried_at_tick = player.carried;
-    }
-}
-
 /// The whole lane.
 pub fn plugin(app: &mut App) {
     app.init_resource::<UiState>()
         .add_systems(Startup, setup)
-        .add_systems(FixedUpdate, snapshot_carried.before(SimSet::Debug))
         .add_systems(
             Update,
             (
                 read_events,
                 tick_ui,
                 update_screens,
+                render_panels,
                 keys::route_keys,
-                toggle_minimap,
                 update_minimap,
                 hud::update_hud,
                 fade::update_overlays,
@@ -597,28 +516,87 @@ pub fn plugin(app: &mut App) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::debug::{DebugCommand, DebugQueue};
+    use crate::headless::{headless_app, mode, send, step};
 
-    /// The death screen's "Lost:" line is rebuilt from the tick snapshot minus what the blessing kept
-    /// — `DeathOutcome.lost` is not stored anywhere the lane can read.
+    /// The lane on a headless app: no window, no font, so only the state machine half runs
+    /// ([`update_screens`]); [`render_panels`] and the minimap stand down on their own.
+    fn ui_app() -> App {
+        let mut app = headless_app();
+        app.add_plugins(plugin);
+        app
+    }
+
+    fn depth(app: &App) -> usize {
+        app.world().resource::<UiState>().menu.depth()
+    }
+
+    /// `ui.js:makeListMenu`'s Escape: it pops the panel stack first and only closes the pause menu
+    /// at its root (`pauseRoot.onEscape` → `A.closePause()`). `player.rs` must therefore *not*
+    /// short-circuit Escape to `ClosePause` while a sub-panel is up.
     #[test]
-    fn lost_loot_is_the_snapshot_minus_the_blessing() {
-        let carried = Carried {
-            oil: 4,
-            relic: 3,
-            rich: 1,
-            quest: 0,
-        };
-        let kept = Carried {
-            oil: 2,
-            relic: 1,
-            rich: 0,
-            quest: 0,
-        };
-        let mut lost = carried;
-        lost.oil -= kept.oil;
-        lost.relic -= kept.relic;
-        assert_eq!(economy::describe(&lost), "2 flasks, 2 relics, 1 rich relic");
-        assert!(lost.total() > 0);
-        assert_eq!(economy::describe(&Carried::default()), "nothing");
+    fn escape_pops_a_pause_sub_panel_before_it_closes_the_menu() {
+        let mut app = ui_app();
+        send(&mut app, DebugCommand::Begin);
+        step(&mut app, 0.1);
+        assert_eq!(mode(&app), GameMode::Hub);
+
+        send(&mut app, DebugCommand::OpenPause);
+        step(&mut app, 0.1);
+        assert_eq!(mode(&app), GameMode::Menu);
+        assert_eq!(depth(&app), 1, "the pause root");
+
+        // `[2] Controls` pushes a sub-panel.
+        send(&mut app, DebugCommand::Key("Digit2".into()));
+        step(&mut app, 0.1);
+        assert_eq!(depth(&app), 2, "Controls is on the stack");
+        assert_eq!(
+            app.world().resource::<UiState>().menu.kind(),
+            Some(&menu::PanelKind::Controls)
+        );
+
+        send(&mut app, DebugCommand::Key("Escape".into()));
+        step(&mut app, 0.1);
+        assert_eq!(mode(&app), GameMode::Menu, "Escape only popped the panel");
+        assert_eq!(depth(&app), 1);
+
+        send(&mut app, DebugCommand::Key("Escape".into()));
+        step(&mut app, 0.2);
+        assert_eq!(mode(&app), GameMode::Hub, "Escape at the root resumes");
+    }
+
+    /// The Sound panel's rows queue the audio lane's commands (`AUDIO_COMMANDS_EXIST`).
+    #[test]
+    fn the_sound_panel_pushes_set_volume_and_toggle_mute() {
+        let mut app = ui_app();
+        send(&mut app, DebugCommand::OpenPause);
+        step(&mut app, 0.1);
+        // `[3] Sound`, then `[2] Mute`.
+        send(&mut app, DebugCommand::Key("Digit3".into()));
+        step(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            app.world().resource::<UiState>().menu.kind(),
+            Some(&menu::PanelKind::Sound)
+        );
+        send(&mut app, DebugCommand::Key("Digit2".into()));
+        step(&mut app, 1.0 / 60.0);
+        // Nothing in the skeleton owns them, so they are still queued when `Drain` logs them —
+        // read the queue in the same tick they were pushed instead.
+        send(&mut app, DebugCommand::Key("ArrowUp".into()));
+        send(&mut app, DebugCommand::Key("ArrowRight".into()));
+        step(&mut app, 1.0 / 60.0);
+        let queued: Vec<DebugCommand> = app
+            .world()
+            .resource::<DebugQueue>()
+            .0
+            .iter()
+            .cloned()
+            .collect();
+        assert!(
+            queued
+                .iter()
+                .any(|c| matches!(c, DebugCommand::SetVolume(_))),
+            "{queued:?}"
+        );
     }
 }

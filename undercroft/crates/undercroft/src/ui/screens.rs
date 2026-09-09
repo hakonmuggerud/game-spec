@@ -4,8 +4,7 @@
 //! the layout is unit-testable without a window.
 //!
 //! `hub.js` keyed these off `[n]` prefixes in the line text; here a [`TextScreen`] carries its picks as
-//! data. A pick with no [`DebugCommand`] behind it (the workshop / press / shrine services, which the
-//! skeleton exposes no command for) is [`Pick::Missing`]: the row is drawn dim and the key does nothing.
+//! data — every one of them a [`DebugCommand`] the run or audio lane handles.
 
 use undercroft_data::{GameData, ItemKind};
 use undercroft_sim::contracts;
@@ -22,11 +21,6 @@ pub enum Pick {
     Cmd(DebugCommand),
     /// Queue these commands in order (`select(z) → descend()` for the tram).
     Cmds(Vec<DebugCommand>),
-    /// The sim has the function but `debug.rs` has no command for it yet; the row is drawn dim.
-    /// The payload names the missing command for the report and the log.
-    Missing(&'static str),
-    /// Handled inside the UI lane (the minimap).
-    ToggleMinimap,
 }
 
 /// One `ui.js:showMenu({title, lines, foot})` screen plus its key table.
@@ -209,7 +203,7 @@ pub fn workshop(data: &GameData, save: &SaveData) -> TextScreen {
             relic_cost_text(cost)
         ));
         lines.push(format!("  {}", tech_line(data, next, "   gives")));
-        picks.push(Some(Pick::Missing("UpgradeLightTech")));
+        picks.push(Some(Pick::Cmd(DebugCommand::UpgradeLightTech)));
     } else {
         lines.push("  Nothing more to learn here.".to_string());
     }
@@ -223,7 +217,7 @@ pub fn workshop(data: &GameData, save: &SaveData) -> TextScreen {
     }
 }
 
-/// `hub.js:openPress()`. `pressRelics` / `deepenReservoir` have no [`DebugCommand`]s.
+/// `hub.js:openPress()`.
 pub fn press(data: &GameData, save: &SaveData) -> TextScreen {
     let bc = &data.config.build_costs;
     let lvl = save.reservoir as usize;
@@ -241,8 +235,8 @@ pub fn press(data: &GameData, save: &SaveData) -> TextScreen {
         ),
     ];
     let mut picks = vec![
-        Some(Pick::Missing("PressRelics(1)")),
-        Some(Pick::Missing("PressRelics(all)")),
+        Some(Pick::Cmd(DebugCommand::PressRelics { n: Some(1) })),
+        Some(Pick::Cmd(DebugCommand::PressRelics { n: None })),
     ];
     if lvl < bc.reservoir.len() {
         let need = bc.reservoir[lvl];
@@ -252,7 +246,7 @@ pub fn press(data: &GameData, save: &SaveData) -> TextScreen {
             bc.reservoir.len(),
             bc.reservoir_oil
         ));
-        picks.push(Some(Pick::Missing("DeepenReservoir")));
+        picks.push(Some(Pick::Cmd(DebugCommand::DeepenReservoir)));
     } else {
         lines.push(format!(
             "  Reservoir {lvl}/{}: the lamp starts with {} oil.",
@@ -294,12 +288,12 @@ pub fn cart(data: &GameData, save: &SaveData, pct: &[(String, u32)]) -> TextScre
         title: "Cartographer's Table".to_string(),
         lines,
         foot: "1 toggles · Esc to close".to_string(),
-        picks: vec![Some(Pick::ToggleMinimap)],
+        picks: vec![Some(Pick::Cmd(DebugCommand::ToggleMinimap))],
         ..TextScreen::default()
     }
 }
 
-/// `hub.js:openShrine()`. `toggleBlessing` has no [`DebugCommand`].
+/// `hub.js:openShrine()`.
 pub fn shrine(data: &GameData, save: &SaveData) -> TextScreen {
     let on = save.blessing;
     let lines = vec![
@@ -318,7 +312,7 @@ pub fn shrine(data: &GameData, save: &SaveData) -> TextScreen {
         title: "Shrine".to_string(),
         lines,
         foot: "1 toggles · Esc to close".to_string(),
-        picks: vec![Some(Pick::Missing("ToggleBlessing"))],
+        picks: vec![Some(Pick::Cmd(DebugCommand::ToggleBlessing))],
         ..TextScreen::default()
     }
 }
@@ -460,16 +454,6 @@ pub fn ending(
     }
 }
 
-/// `ui.js:targetLabel(t)` for the hub half of `hintText()`. The zone half needs `player.rs`'s
-/// `interactTarget`, which is private — see the lane report.
-pub fn hub_target_label(t: &economy::HubInteract) -> String {
-    match t {
-        economy::HubInteract::Build { label, .. }
-        | economy::HubInteract::Building { label, .. }
-        | economy::HubInteract::Descend { label, .. } => label.clone(),
-    }
-}
-
 /// `config.js:LABEL[kind]`.
 pub fn item_label(data: &GameData, kind: ItemKind) -> &str {
     let l = &data.config.label;
@@ -524,22 +508,25 @@ mod tests {
     }
 
     #[test]
-    fn service_rows_without_a_command_are_marked_missing() {
+    fn service_rows_carry_their_debug_commands() {
         let d = data();
         let save = SaveData::defaults(0.6);
         assert_eq!(
             workshop(&d, &save).picks[0],
-            Some(Pick::Missing("UpgradeLightTech"))
+            Some(Pick::Cmd(DebugCommand::UpgradeLightTech))
         );
         assert_eq!(
             press(&d, &save).picks[0],
-            Some(Pick::Missing("PressRelics(1)"))
+            Some(Pick::Cmd(DebugCommand::PressRelics { n: Some(1) }))
         );
         assert_eq!(
             shrine(&d, &save).picks[0],
-            Some(Pick::Missing("ToggleBlessing"))
+            Some(Pick::Cmd(DebugCommand::ToggleBlessing))
         );
-        assert_eq!(cart(&d, &save, &[]).picks[0], Some(Pick::ToggleMinimap));
+        assert_eq!(
+            cart(&d, &save, &[]).picks[0],
+            Some(Pick::Cmd(DebugCommand::ToggleMinimap))
+        );
     }
 
     #[test]

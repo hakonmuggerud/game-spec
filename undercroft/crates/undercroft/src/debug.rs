@@ -46,8 +46,10 @@ pub enum DebugCommand {
     Die,
     /// `enterHub()`.
     EnterHub,
-    /// `openMenu(kind)` — `board`, `build`, `service`, `dialog` …
-    OpenMenu(String),
+    /// `openMenu(kind)` — `board`, `build`, `service`, `dialog` … `id` is the building
+    /// (`hub.js:openBuilding`) or NPC (`npc.js:talk`) the panel was opened on, so the UI lane does
+    /// not have to re-resolve `hub_interact_target` after the fact.
+    OpenMenu { kind: String, id: Option<String> },
     /// `closeMenu()`.
     CloseMenu,
     /// `openMainMenu()` / `toMainMenu()` — abandons a run in progress.
@@ -107,6 +109,23 @@ pub enum DebugCommand {
     ContinueEnding,
     /// `reset()` — `resetRuntime()`.
     Reset,
+    /// `hub.js:upgradeLightTech()` — the Workshop's `[1]`.
+    UpgradeLightTech,
+    /// `hub.js:pressRelics(n)` — the Oil Press; `None` presses every banked relic.
+    PressRelics { n: Option<u32> },
+    /// `hub.js:deepenReservoir()` — the Oil Press's `[3]`.
+    DeepenReservoir,
+    /// `hub.js:toggleBlessing()` — the Shrine's `[1]`.
+    ToggleBlessing,
+    /// `endgame.js:cancel()` — Esc on the altar choice screen.
+    CancelChoice,
+    /// `hub.js:toggleMinimap()` / `main.js`'s `KEYS.minimap` branch — show or hide the minimap,
+    /// gated on the Cartographer's Table.
+    ToggleMinimap,
+    /// `audio.js:setVolume(v)` — the master volume, 0 … 1 (the audio lane owns it).
+    SetVolume(f32),
+    /// `audio.js:toggleMute()`.
+    ToggleMute,
     /// A raw key press fed to the same handler the real input uses (`main.js:560–640`), so tests can
     /// press `KeyE`, `Escape` or `Digit1`.
     Key(String),
@@ -127,7 +146,7 @@ impl DebugCommand {
             DebugCommand::ReturnToHub => "returnToHub",
             DebugCommand::Die => "die",
             DebugCommand::EnterHub => "enterHub",
-            DebugCommand::OpenMenu(_) => "openMenu",
+            DebugCommand::OpenMenu { .. } => "openMenu",
             DebugCommand::CloseMenu => "closeMenu",
             DebugCommand::OpenMainMenu => "openMainMenu",
             DebugCommand::OpenPause => "openPause",
@@ -154,6 +173,14 @@ impl DebugCommand {
             DebugCommand::ContinueEnding => "continueEnding",
             DebugCommand::Reset => "reset",
             DebugCommand::Key(_) => "key",
+            DebugCommand::UpgradeLightTech => "upgradeLightTech",
+            DebugCommand::PressRelics { .. } => "pressRelics",
+            DebugCommand::DeepenReservoir => "deepenReservoir",
+            DebugCommand::ToggleBlessing => "toggleBlessing",
+            DebugCommand::CancelChoice => "cancelChoice",
+            DebugCommand::ToggleMinimap => "toggleMinimap",
+            DebugCommand::SetVolume(_) => "setVolume",
+            DebugCommand::ToggleMute => "toggleMute",
         }
     }
 
@@ -169,7 +196,8 @@ impl DebugCommand {
     /// `teleport 12.5 8.5 1.57` (x, z, an optional yaw), `spawnHunter 10 10 base` (cx, cz,
     /// profile), `spawnCreature drowner 10 10` (profile, cx, cz — always spawned with default
     /// `SpawnOpts`; the text form has no way to set facing/sweep/reach/territory/leash), `key
-    /// KeyE`.
+    /// KeyE`, `openMenu service workshop` (kind and an optional target id), `pressRelics 1` /
+    /// `pressRelics all` / bare `pressRelics` (all), `setVolume 0.5`.
     pub fn parse(line: &str) -> Result<DebugCommand, String> {
         let mut words = line.split_whitespace();
         let name = words
@@ -211,7 +239,10 @@ impl DebugCommand {
             "returntohub" => DebugCommand::ReturnToHub,
             "die" => DebugCommand::Die,
             "enterhub" => DebugCommand::EnterHub,
-            "openmenu" => DebugCommand::OpenMenu(arg(&args, 0, "kind")?.to_string()),
+            "openmenu" => DebugCommand::OpenMenu {
+                kind: arg(&args, 0, "kind")?.to_string(),
+                id: args.get(1).map(|s| s.to_string()),
+            },
             "closemenu" => DebugCommand::CloseMenu,
             "openmainmenu" => DebugCommand::OpenMainMenu,
             "openpause" => DebugCommand::OpenPause,
@@ -265,6 +296,21 @@ impl DebugCommand {
             "continueending" => DebugCommand::ContinueEnding,
             "reset" => DebugCommand::Reset,
             "key" => DebugCommand::Key(arg(&args, 0, "code")?.to_string()),
+            "upgradelighttech" => DebugCommand::UpgradeLightTech,
+            // `pressRelics` with no argument (or the word `all`) is `pressRelics(save.relics)`.
+            "pressrelics" => DebugCommand::PressRelics {
+                n: match args.first() {
+                    None => None,
+                    Some(s) if s.eq_ignore_ascii_case("all") => None,
+                    Some(_) => Some(num(&args, 0, "n")?),
+                },
+            },
+            "deepenreservoir" => DebugCommand::DeepenReservoir,
+            "toggleblessing" => DebugCommand::ToggleBlessing,
+            "cancelchoice" => DebugCommand::CancelChoice,
+            "toggleminimap" => DebugCommand::ToggleMinimap,
+            "setvolume" => DebugCommand::SetVolume(num(&args, 0, "vol")?),
+            "togglemute" => DebugCommand::ToggleMute,
             other => return Err(format!("unknown debug command: {other:?}")),
         })
     }
@@ -542,7 +588,17 @@ mod tests {
             ("enterHub", DebugCommand::EnterHub),
             (
                 "openMenu board",
-                DebugCommand::OpenMenu("board".to_string()),
+                DebugCommand::OpenMenu {
+                    kind: "board".to_string(),
+                    id: None,
+                },
+            ),
+            (
+                "openMenu service workshop",
+                DebugCommand::OpenMenu {
+                    kind: "service".to_string(),
+                    id: Some("workshop".to_string()),
+                },
             ),
             ("closeMenu", DebugCommand::CloseMenu),
             ("openMainMenu", DebugCommand::OpenMainMenu),
@@ -637,6 +693,16 @@ mod tests {
             ("continueEnding", DebugCommand::ContinueEnding),
             ("reset", DebugCommand::Reset),
             ("key KeyE", DebugCommand::Key("KeyE".to_string())),
+            ("upgradeLightTech", DebugCommand::UpgradeLightTech),
+            ("pressRelics 1", DebugCommand::PressRelics { n: Some(1) }),
+            ("pressRelics all", DebugCommand::PressRelics { n: None }),
+            ("pressRelics", DebugCommand::PressRelics { n: None }),
+            ("deepenReservoir", DebugCommand::DeepenReservoir),
+            ("toggleBlessing", DebugCommand::ToggleBlessing),
+            ("cancelChoice", DebugCommand::CancelChoice),
+            ("toggleMinimap", DebugCommand::ToggleMinimap),
+            ("setVolume 0.5", DebugCommand::SetVolume(0.5)),
+            ("toggleMute", DebugCommand::ToggleMute),
         ]
     }
 

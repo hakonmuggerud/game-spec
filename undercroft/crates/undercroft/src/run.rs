@@ -75,6 +75,30 @@ pub struct Booted(pub bool);
 #[derive(Resource, Debug, Default)]
 pub struct RideUpPending(pub bool);
 
+/// `#minimap.hidden` — is the minimap showing? `main.js`'s `KEYS.minimap` branch and
+/// `hub.js:toggleMinimap` both flip this one flag, so it lives here (with the Cartographer's Table
+/// gate) rather than in the UI lane, which only draws what it says.
+#[derive(Resource, Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct MinimapRes(pub bool);
+
+/// The building (`hub.js:openBuilding`) or resident (`npc.js:talk`) the open menu belongs to —
+/// the `id` of the [`DebugCommand::OpenMenu`] that opened it. Cleared with the menu.
+#[derive(Resource, Debug, Default, Clone, PartialEq, Eq)]
+pub struct MenuTargetRes(pub Option<String>);
+
+/// `main.js:die`'s `DeathOutcome` kept for the death screen (`ui.js:showDeath(lostLoot, lostAny)`).
+#[derive(Resource, Debug, Default, Clone, PartialEq)]
+pub struct LastDeath {
+    /// `economy::describe(outcome.lost)` — "2 flasks, 1 relic", or "nothing".
+    pub lost: String,
+    /// `main.js:380 state.lostAny` — was anything actually dropped? (Whatever the blessing banked
+    /// is already out of `lost`, which `economy::die` describes after [`economy::apply_blessing`].)
+    pub lost_any: bool,
+    /// A death bundle was left where the player fell — the same condition, named for the note the
+    /// death screen shows ("Your bundle lies where you fell.").
+    pub bundle_left: bool,
+}
+
 /* ============================================================
 System params
 ============================================================ */
@@ -120,6 +144,9 @@ pub struct RunLocal<'w> {
     pub ending: ResMut<'w, EndingScreenRes>,
     pub bundles: ResMut<'w, BundleStore>,
     pub ride_up: ResMut<'w, RideUpPending>,
+    pub minimap: ResMut<'w, MinimapRes>,
+    pub menu_target: ResMut<'w, MenuTargetRes>,
+    pub death: ResMut<'w, LastDeath>,
 }
 
 /// Everything a lifecycle function touches (`ctx` in `main.js`), grouped into nested
@@ -754,6 +781,12 @@ fn die(ctx: &mut RunCtx, hunter_id: Option<u32>, out: &mut Vec<SimEvent>) -> boo
         z,
         hunter_id,
     );
+    // `ui.js:showDeath(lostLoot, lostAny)` reads these; the UI lane must not rebuild them.
+    *ctx.local.death = LastDeath {
+        lost: outcome.lost.clone(),
+        lost_any: outcome.bundle.is_some(),
+        bundle_left: outcome.bundle.is_some(),
+    };
     if let Some(bundle) = outcome.bundle {
         ctx.spawns.pending_bundles.push((bundle, x, z));
     }
@@ -847,13 +880,15 @@ fn to_main_menu(ctx: &mut RunCtx, out: &mut Vec<SimEvent>) -> bool {
     true
 }
 
-/// `main.js:openMenu(kind)`.
-fn open_menu(ctx: &mut RunCtx, kind: &str, out: &mut Vec<SimEvent>) -> bool {
+/// `main.js:openMenu(kind)`. `id` is `hub.js:openBuilding`'s building or `npc.js:talk`'s resident,
+/// remembered in [`MenuTargetRes`] for the UI lane.
+fn open_menu(ctx: &mut RunCtx, kind: &str, id: Option<&str>, out: &mut Vec<SimEvent>) -> bool {
     if !state::can_open_menu(ctx.mode.get()) {
         return false;
     }
     ctx.mode.prev.0 = Some(ctx.mode.get());
     ctx.mode.kind.0 = Some(kind.to_string());
+    ctx.local.menu_target.0 = id.map(str::to_string);
     ctx.mode.set(GameMode::Menu);
     push_events(
         ctx,
@@ -875,6 +910,7 @@ fn close_menu(ctx: &mut RunCtx, out: &mut Vec<SimEvent>) -> bool {
     ctx.mode.set(back);
     ctx.mode.prev.0 = None;
     ctx.mode.kind.0 = None;
+    ctx.local.menu_target.0 = None;
     push_events(ctx, out, vec![SimEvent::MenuClose { kind }]);
     true
 }
@@ -884,7 +920,7 @@ fn open_pause(ctx: &mut RunCtx, out: &mut Vec<SimEvent>) -> bool {
     if !state::can_open_menu(ctx.mode.get()) || ctx.fade.mode == FadeMode::Out {
         return false;
     }
-    if !open_menu(ctx, "pause", out) {
+    if !open_menu(ctx, "pause", None, out) {
         return false;
     }
     let in_zone = ctx.mode.prev.0 == Some(GameMode::Zone);
@@ -1115,6 +1151,34 @@ fn cancel_choice(ctx: &mut RunCtx, out: &mut Vec<SimEvent>) -> bool {
     true
 }
 
+/// `main.js`'s `KEYS.minimap` branch plus `hub.js:onMinimapToggle` / `hub.js:toggleMinimap`: the
+/// flag flips, but without the Cartographer's Table there is no map to show, so it is forced back
+/// off with the toast and a `uiError` and no `minimap` event is emitted.
+fn toggle_minimap(ctx: &mut RunCtx, out: &mut Vec<SimEvent>) -> bool {
+    if !ctx.save.0.buildings.cart {
+        let was_on = ctx.local.minimap.0;
+        ctx.local.minimap.0 = false;
+        if !was_on {
+            // `onMinimapToggle` only complains when the canvas had just been revealed.
+            push_events(
+                ctx,
+                out,
+                vec![
+                    SimEvent::toast(
+                        "You have no map of this place. Ines could draw one — Cartographer's Table.",
+                    ),
+                    SimEvent::ui_error(),
+                ],
+            );
+        }
+        return false;
+    }
+    let on = !ctx.local.minimap.0;
+    ctx.local.minimap.0 = on;
+    push_events(ctx, out, vec![SimEvent::Minimap { on }]);
+    true
+}
+
 /// `endgame.js:choose(id)`.
 fn choose_ending(ctx: &mut RunCtx, id: &str, out: &mut Vec<SimEvent>) -> bool {
     if ctx.mode.get() != GameMode::Ending {
@@ -1193,7 +1257,7 @@ fn owns(cmd: &DebugCommand) -> bool {
             | DebugCommand::Die
             | DebugCommand::EnterHub
             | DebugCommand::ReturnToHub
-            | DebugCommand::OpenMenu(_)
+            | DebugCommand::OpenMenu { .. }
             | DebugCommand::CloseMenu
             | DebugCommand::OpenMainMenu
             | DebugCommand::OpenPause
@@ -1218,6 +1282,12 @@ fn owns(cmd: &DebugCommand) -> bool {
             | DebugCommand::OpenChoice
             | DebugCommand::ContinueEnding
             | DebugCommand::Reset
+            | DebugCommand::UpgradeLightTech
+            | DebugCommand::PressRelics { .. }
+            | DebugCommand::DeepenReservoir
+            | DebugCommand::ToggleBlessing
+            | DebugCommand::CancelChoice
+            | DebugCommand::ToggleMinimap
     )
 }
 
@@ -1268,8 +1338,8 @@ fn run_command(
         DebugCommand::ReturnToHub => {
             return_to_hub(ctx);
         }
-        DebugCommand::OpenMenu(kind) => {
-            open_menu(ctx, kind, out);
+        DebugCommand::OpenMenu { kind, id } => {
+            open_menu(ctx, kind, id.as_deref(), out);
         }
         DebugCommand::CloseMenu => {
             close_menu(ctx, out);
@@ -1393,6 +1463,41 @@ fn run_command(
         DebugCommand::Reset => {
             reset_runtime(ctx, out);
             store_now(ctx, writer);
+        }
+        // `hub.js:openWorkshop`'s `[1]`.
+        DebugCommand::UpgradeLightTech => {
+            let (_, evs) =
+                economy::upgrade_light_tech(ctx.game.data(), &mut ctx.save.0, &ctx.hub.0);
+            push_events(ctx, out, evs);
+        }
+        // `hub.js:openPress`'s `[1]` / `[2]` — `None` is "press every relic".
+        DebugCommand::PressRelics { n } => {
+            let n = n.unwrap_or(ctx.save.0.relics);
+            let (_, evs) = economy::press_relics(ctx.game.config(), &mut ctx.save.0, n);
+            push_events(ctx, out, evs);
+        }
+        // `hub.js:openPress`'s `[3]`.
+        DebugCommand::DeepenReservoir => {
+            let (oil, evs) =
+                economy::deepen_reservoir(ctx.game.config(), &mut ctx.save.0, &ctx.hub.0);
+            if let Some(oil) = oil {
+                // `hub.js:deepenReservoir` tops the standing lamp up in the hub.
+                if hub_showing(ctx) {
+                    ctx.lamp.0.oil = oil;
+                }
+            }
+            push_events(ctx, out, evs);
+        }
+        // `hub.js:openShrine`'s `[1]`.
+        DebugCommand::ToggleBlessing => {
+            let evs = economy::toggle_blessing(ctx.game.config(), &mut ctx.save.0);
+            push_events(ctx, out, evs);
+        }
+        DebugCommand::CancelChoice => {
+            cancel_choice(ctx, out);
+        }
+        DebugCommand::ToggleMinimap => {
+            toggle_minimap(ctx, out);
         }
         _ => {}
     }
@@ -1770,6 +1875,9 @@ pub fn plugin(app: &mut App) {
         .init_resource::<SaveWriter>()
         .init_resource::<Booted>()
         .init_resource::<RideUpPending>()
+        .init_resource::<MinimapRes>()
+        .init_resource::<MenuTargetRes>()
+        .init_resource::<LastDeath>()
         .add_systems(
             FixedUpdate,
             (boot, handle_debug)
@@ -1811,6 +1919,141 @@ mod tests {
     use super::*;
     use crate::headless::*;
     use crate::resources::MemoryStore;
+
+    /// The hub services the UI lane draws: each `[n]` row's `DebugCommand` runs the sim call
+    /// `hub.js` bound to it.
+    #[test]
+    fn the_hub_service_commands_run_their_sim_calls() {
+        let mut app = headless_app();
+        send(&mut app, DebugCommand::Begin);
+        send(&mut app, DebugCommand::UnlockAll);
+        step(&mut app, 0.5);
+        let before = {
+            let s = &app.world().resource::<SaveRes>().0;
+            (s.light_tech, s.relics, s.oil, s.reservoir, s.blessing)
+        };
+        assert!(before.1 >= 4, "unlockAll banks relics: {before:?}");
+
+        // The Press: one relic becomes `press_relic_oil`, then every remaining relic.
+        send(&mut app, DebugCommand::PressRelics { n: Some(1) });
+        step(&mut app, 0.1);
+        {
+            let s = &app.world().resource::<SaveRes>().0;
+            assert_eq!(s.relics, before.1 - 1);
+            assert!(s.oil > before.2);
+        }
+        send(&mut app, DebugCommand::PressRelics { n: None });
+        step(&mut app, 0.1);
+        assert_eq!(app.world().resource::<SaveRes>().0.relics, 0, "all pressed");
+
+        // The Shrine flips `save.blessing` both ways.
+        send(&mut app, DebugCommand::ToggleBlessing);
+        step(&mut app, 0.1);
+        assert_eq!(app.world().resource::<SaveRes>().0.blessing, !before.4);
+        send(&mut app, DebugCommand::ToggleBlessing);
+        step(&mut app, 0.1);
+        assert_eq!(app.world().resource::<SaveRes>().0.blessing, before.4);
+
+        // The Workshop and the reservoir both need relics, which the Press just spent.
+        send(
+            &mut app,
+            DebugCommand::SetResources {
+                oil: None,
+                relics: Some(99),
+                rich: Some(20),
+            },
+        );
+        send(&mut app, DebugCommand::SetPoints(0));
+        step(&mut app, 0.1);
+        send(&mut app, DebugCommand::UpgradeLightTech);
+        send(&mut app, DebugCommand::DeepenReservoir);
+        step(&mut app, 0.2);
+        let s = &app.world().resource::<SaveRes>().0;
+        assert_eq!(s.reservoir, 1, "one level deeper");
+        // `unlockAll` already set light-tech III (the last row), so the upgrade is refused there;
+        // after `setPoints(0)` the tech is untouched and the refusal is a `uiError`.
+        assert_eq!(s.light_tech, before.0);
+        assert!(log(&app).count("uiError") > 0);
+    }
+
+    /// `main.js`'s `KEYS.minimap` branch: without the Cartographer's Table the toggle only
+    /// complains; with it, the flag flips and `minimap {on}` is emitted.
+    #[test]
+    fn the_minimap_toggle_needs_the_cartographers_table() {
+        let mut app = headless_app();
+        send(&mut app, DebugCommand::Begin);
+        step(&mut app, 0.5);
+        assert!(!app.world().resource::<SaveRes>().0.buildings.cart);
+
+        send(&mut app, DebugCommand::ToggleMinimap);
+        step(&mut app, 0.1);
+        assert!(!app.world().resource::<MinimapRes>().0, "still hidden");
+        assert_eq!(log(&app).count("minimap"), 0);
+        assert!(log(&app).count("uiError") > 0);
+
+        send(
+            &mut app,
+            DebugCommand::Build {
+                id: "cart".to_string(),
+                free: true,
+            },
+        );
+        step(&mut app, 0.2);
+        send(&mut app, DebugCommand::ToggleMinimap);
+        step(&mut app, 0.1);
+        assert!(app.world().resource::<MinimapRes>().0);
+        assert_eq!(
+            log(&app).last("minimap"),
+            Some(&undercroft_sim::SimEvent::Minimap { on: true })
+        );
+        send(&mut app, DebugCommand::ToggleMinimap);
+        step(&mut app, 0.1);
+        assert!(!app.world().resource::<MinimapRes>().0);
+    }
+
+    /// `openMenu` carries the building / resident id straight to [`MenuTargetRes`], and closing
+    /// the menu clears it.
+    #[test]
+    fn open_menu_remembers_its_target() {
+        let mut app = headless_app();
+        send(&mut app, DebugCommand::Begin);
+        step(&mut app, 0.5);
+        send(
+            &mut app,
+            DebugCommand::OpenMenu {
+                kind: "service".to_string(),
+                id: Some("workshop".to_string()),
+            },
+        );
+        step(&mut app, 0.1);
+        assert_eq!(
+            app.world().resource::<MenuTargetRes>().0.as_deref(),
+            Some("workshop")
+        );
+        send(&mut app, DebugCommand::CloseMenu);
+        step(&mut app, 0.1);
+        assert_eq!(app.world().resource::<MenuTargetRes>().0, None);
+    }
+
+    /// `main.js:die` writes `state.lostLoot` / `state.lostAny`; the death screen reads them from
+    /// [`LastDeath`] instead of rebuilding them from a snapshot.
+    #[test]
+    fn the_death_outcome_is_kept_for_the_death_screen() {
+        let mut app = headless_app();
+        send(&mut app, DebugCommand::GotoZone("undercroft".to_string()));
+        step(&mut app, 0.5);
+        app.world_mut().resource_mut::<Player>().carried = Carried {
+            oil: 2,
+            relic: 1,
+            rich: 0,
+            quest: 0,
+        };
+        send(&mut app, DebugCommand::Die);
+        step(&mut app, 0.2);
+        let d = app.world().resource::<LastDeath>().clone();
+        assert_eq!(d.lost, "2 flasks, 1 relic");
+        assert!(d.lost_any && d.bundle_left);
+    }
 
     /// `save.js:126` — a write still inside the debounce window is flushed when the app quits.
     #[test]

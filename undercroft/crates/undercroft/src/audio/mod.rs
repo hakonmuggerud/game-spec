@@ -15,7 +15,8 @@
 //!
 //! Master volume and mute live in `save.audio` exactly as `audio.js` kept them on `ctx.save.audio`
 //! ([`AudioSettings`]), and `KeyM` / `BracketLeft` / `BracketRight` are handled here, off the
-//! `key` event, as `main.js:575` did.
+//! `key` event, as `main.js:575` did — as are the `SetVolume` / `ToggleMute` commands the UI
+//! lane's Sound panel pushes ([`settings_plugin`], which needs no sound device).
 //!
 //! Registered only by [`crate::UndercroftPlugin`]: this lane needs the asset server and the
 //! `AudioPlugin` from `DefaultPlugins`, and must stay out of the headless harness
@@ -420,10 +421,10 @@ fn volume_keys(
             undercroft_sim::SimEvent::Key { code, .. } => {
                 if bound("mute", code) {
                     settings.toggle_mute();
-                } else if bound("volDown", code) {
+                } else if bound("vol_down", code) {
                     let v = settings.vol;
                     settings.set_volume(v - step);
-                } else if bound("volUp", code) {
+                } else if bound("vol_up", code) {
                     let v = settings.vol;
                     settings.set_volume(v + step);
                 }
@@ -435,6 +436,31 @@ fn volume_keys(
     if restore {
         save.0.audio.vol = settings.vol;
         save.0.audio.muted = settings.muted;
+    }
+}
+
+/// The two `DebugCommand`s that write `save.audio` — the Sound panel's rows push them and this
+/// lane, which owns the setting, drains them in [`DebugSet::Handle`] (`run.rs` must not depend on a
+/// lane). Same effect as the `M` / `[` / `]` keys above, one tick earlier in the frame.
+fn debug_commands(
+    mut queue: ResMut<crate::debug::DebugQueue>,
+    mut settings: ResMut<AudioSettings>,
+) {
+    for cmd in queue.take(|c| {
+        matches!(
+            c,
+            crate::debug::DebugCommand::SetVolume(_) | crate::debug::DebugCommand::ToggleMute
+        )
+    }) {
+        match cmd {
+            crate::debug::DebugCommand::SetVolume(v) => {
+                settings.set_volume(v);
+            }
+            crate::debug::DebugCommand::ToggleMute => {
+                settings.toggle_mute();
+            }
+            _ => {}
+        }
     }
 }
 
@@ -477,19 +503,33 @@ fn sync_save(mut settings: ResMut<AudioSettings>, mut save: ResMut<SaveRes>) {
 Plugin
 ============================================================ */
 
+/// The half of the lane that needs no sound device: [`AudioSettings`] (`save.audio`, which this
+/// lane owns), the `M` / `[` / `]` keys, the `SetVolume` / `ToggleMute` commands the Sound panel
+/// pushes, and the toast each change emits. Added by [`plugin`] and separately usable from a
+/// headless test, where there is no `AudioPlugin` at all.
+pub fn settings_plugin(app: &mut App) {
+    app.init_resource::<AudioSettings>()
+        .add_systems(
+            FixedUpdate,
+            debug_commands.in_set(crate::debug::DebugSet::Handle),
+        )
+        .add_systems(Update, (volume_keys, volume_toast, sync_save).chain());
+}
+
 /// Register the synth asset, spawn the one entity that plays it, load the one-shot clips and add
 /// the 30 Hz parameter push and the event → sound mapping.
 pub fn plugin(app: &mut App) {
+    app.add_plugins(settings_plugin);
     // `DefaultPlugins` brings `AudioPlugin`; a bare `App` (the asset-loader test in
     // `crate::headless`, or any future tool that adds `UndercroftPlugin` without a renderer) does
-    // not, and registering audio sources or loading `AudioSource`s without it panics. Stay inert.
+    // not, and registering audio sources or loading `AudioSource`s without it panics. The settings
+    // half above still runs; everything that makes a noise stays out.
     if !app.is_plugin_added::<bevy::audio::AudioPlugin>() {
-        info!("audio: no AudioPlugin, the audio lane stays inert");
+        info!("audio: no AudioPlugin, only the volume/mute settings are live");
         return;
     }
     app.add_audio_source::<Synth>()
         .add_audio_source::<oneshots::Clip>()
-        .init_resource::<AudioSettings>()
         .init_resource::<AudioParams>()
         .init_resource::<AudioRuntime>()
         .init_resource::<oneshots::Clips>()
@@ -499,15 +539,13 @@ pub fn plugin(app: &mut App) {
         .add_systems(
             Update,
             (
-                volume_keys,
-                volume_toast,
-                sync_save,
                 oneshots::decode_clips,
                 oneshots::map_events,
                 oneshots::play_queue,
                 oneshots::reap_shots,
             )
-                .chain(),
+                .chain()
+                .after(sync_save),
         )
         .add_systems(FixedUpdate, voices::tick.in_set(SimSet::Fanout));
 }
@@ -590,5 +628,94 @@ mod tests {
         assert_eq!(s.master(TUNE_DUCK_MENU), TUNE_DUCK_MENU);
         assert!(s.toggle_mute());
         assert_eq!(s.master(1.0), 0.0);
+    }
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod settings_tests {
+    use super::*;
+    use crate::debug::DebugCommand;
+    use crate::headless::{headless_app, log, send, step};
+
+    /// A headless app with only [`settings_plugin`]: no `AudioPlugin`, so nothing makes a noise,
+    /// but the whole `M` / `[` / `]` → `AudioSettings` → `save.audio` path is live.
+    fn audio_app() -> App {
+        let mut app = headless_app();
+        app.add_plugins(settings_plugin);
+        // One tick so `sync_save` sees `AudioSettings` as *added* and seeds it from the save
+        // (`audio.js:init` read `ctx.save.audio` once); after that this lane is the writer.
+        step(&mut app, 1.0 / 60.0);
+        app
+    }
+
+    fn saved(app: &App) -> (f32, bool) {
+        let a = app.world().resource::<SaveRes>().0.audio;
+        (a.vol, a.muted)
+    }
+
+    /// `main.js:575` — the three keys reach `save.audio` and each change toasts.
+    #[test]
+    fn the_mute_and_volume_keys_write_save_audio() {
+        let mut app = audio_app();
+        let (vol0, muted0) = saved(&app);
+        assert!(!muted0);
+
+        send(&mut app, DebugCommand::Key("KeyM".into()));
+        step(&mut app, 0.1);
+        assert_eq!(saved(&app).1, true, "KeyM mutes");
+        assert_eq!(
+            log(&app).last("toast").cloned(),
+            Some(undercroft_sim::SimEvent::toast("Sound off"))
+        );
+
+        send(&mut app, DebugCommand::Key("KeyM".into()));
+        step(&mut app, 0.1);
+        assert!(!saved(&app).1, "KeyM unmutes");
+
+        // `AUDIO.volStep` is 0.1, rounded to two decimals by `setVolume`.
+        send(&mut app, DebugCommand::Key("BracketLeft".into()));
+        step(&mut app, 0.1);
+        assert!(
+            (saved(&app).0 - (vol0 - 0.1)).abs() < 1e-4,
+            "{:?}",
+            saved(&app)
+        );
+        send(&mut app, DebugCommand::Key("BracketRight".into()));
+        send(&mut app, DebugCommand::Key("BracketRight".into()));
+        step(&mut app, 0.2);
+        assert!(
+            (saved(&app).0 - (vol0 + 0.1)).abs() < 1e-4,
+            "{:?}",
+            saved(&app)
+        );
+    }
+
+    /// The Sound panel's rows go through the same door: `SetVolume` / `ToggleMute` are drained in
+    /// `DebugSet::Handle` by this lane, not by `run.rs`.
+    #[test]
+    fn the_sound_panel_commands_reach_save_audio() {
+        let mut app = audio_app();
+        send(&mut app, DebugCommand::SetVolume(0.25));
+        send(&mut app, DebugCommand::ToggleMute);
+        step(&mut app, 0.2);
+        assert_eq!(saved(&app), (0.25, true));
+        assert!(
+            app.world()
+                .resource::<crate::debug::DebugQueue>()
+                .is_empty(),
+            "the audio lane took them, so `Drain` never saw them"
+        );
+    }
+
+    /// `main.js:resetRuntime` keeps the sound settings across a save wipe.
+    #[test]
+    fn a_save_wipe_keeps_the_sound_settings() {
+        let mut app = audio_app();
+        send(&mut app, DebugCommand::SetVolume(0.3));
+        send(&mut app, DebugCommand::ToggleMute);
+        step(&mut app, 0.2);
+        send(&mut app, DebugCommand::Reset);
+        step(&mut app, 0.2);
+        assert_eq!(saved(&app), (0.3, true));
     }
 }

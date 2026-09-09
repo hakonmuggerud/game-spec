@@ -90,9 +90,9 @@ impl PanelView {
         }
     }
 
-    /// `ui.js:showMenu({title, lines, foot})` and the screens built on it. A `[n]` line whose pick has
-    /// no `DebugCommand` behind it is dimmed like `hub.js`'s unaffordable rows, so an inert action reads
-    /// as inert (see [`crate::ui::screens::Pick::Missing`] and the lane report).
+    /// `ui.js:showMenu({title, lines, foot})` and the screens built on it. A `[n]` line the screen
+    /// left without a pick is dimmed like `hub.js`'s unaffordable rows, so an inert digit reads as
+    /// inert.
     pub fn from_text(s: &TextScreen) -> PanelView {
         PanelView {
             title: s.title.clone(),
@@ -311,7 +311,7 @@ pub fn spawn_panel(commands: &mut Commands, font: &UiFont, v: &PanelView) {
     }
 }
 
-/// Prefix a `[n]` line with the dim marker when pick `n` is [`crate::ui::screens::Pick::Missing`].
+/// Prefix a `[n]` line with the dim marker when the screen left digit `n` without a pick.
 fn dim_if_inert(line: &str, s: &TextScreen) -> String {
     let Some(rest) = line.strip_prefix('[') else {
         return line.to_string();
@@ -323,8 +323,7 @@ fn dim_if_inert(line: &str, s: &TextScreen) -> String {
         .parse::<usize>()
         .ok()
         .filter(|n| *n >= 1)
-        .and_then(|n| s.picks.get(n - 1))
-        .is_some_and(|p| matches!(p, Some(crate::ui::screens::Pick::Missing(_))));
+        .is_some_and(|n| !matches!(s.picks.get(n - 1), Some(Some(_))));
     if inert {
         format!("  {line}")
     } else {
@@ -383,10 +382,7 @@ mod tests {
                 "[2] Build the Workshop".into(),
                 "plain line".into(),
             ],
-            picks: vec![
-                Some(Pick::Missing("UpgradeLightTech")),
-                Some(Pick::Cmd(crate::debug::DebugCommand::Bank)),
-            ],
+            picks: vec![None, Some(Pick::Cmd(crate::debug::DebugCommand::Bank))],
             ..TextScreen::default()
         };
         let v = PanelView::from_text(&s);

@@ -99,6 +99,36 @@ impl Interaction {
     }
 }
 
+/// What [`resolve_interact`] found: the target plus the exact HUD label `ui.js:targetLabel(t)`
+/// would print for it. The label is built here because only the resolver has what it needs — the
+/// item kind, the gate's tool name, the resident's short name, the sim's own hub label and the
+/// Source's ride-confirmation timer.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Resolved {
+    pub target: Interaction,
+    /// `ui.js:targetLabel(t)`.
+    pub label: String,
+}
+
+/// `main.js:interactTarget()` as of the last fixed tick, for the HUD's hint line.
+///
+/// The UI lane reads this in `Update` instead of resolving the target itself: the resolver needs
+/// most of the sim resources and already runs once per tick here.
+#[derive(Resource, Debug, Clone, Default, PartialEq)]
+pub struct CurrentInteract(pub Option<Resolved>);
+
+impl CurrentInteract {
+    /// `targetLabel(interactTarget())` — `""` when nothing is in reach.
+    pub fn label(&self) -> &str {
+        self.0.as_ref().map_or("", |r| r.label.as_str())
+    }
+
+    /// The resolved target, if any.
+    pub fn target(&self) -> Option<&Interaction> {
+        self.0.as_ref().map(|r| &r.target)
+    }
+}
+
 /* ============================================================
 Queued one-shot actions
 ============================================================ */
@@ -441,7 +471,7 @@ fn shortcut_target(
     doors: &world::ZoneDoors,
     p: &Player,
     r: f32,
-) -> Option<Interaction> {
+) -> Option<Resolved> {
     let (fx, fz) = (-p.yaw.sin(), -p.yaw.cos());
     for (i, s) in map.shortcuts.iter().enumerate() {
         if doors.shortcut_open(i) {
@@ -453,11 +483,19 @@ fn shortcut_target(
             continue;
         }
         let st = world::shortcut_status(map, doors, Some(i), p.x, p.z);
-        return Some(Interaction::Shortcut {
-            cx: s.marker.cx,
-            cz: s.marker.cz,
-            name: st.name,
-            barred: !st.can_open,
+        let barred = !st.can_open;
+        return Some(Resolved {
+            target: Interaction::Shortcut {
+                cx: s.marker.cx,
+                cz: s.marker.cz,
+                name: st.name,
+                barred,
+            },
+            label: if barred {
+                "Barred from the other side".to_string()
+            } else {
+                "[E] Lift the bars".to_string()
+            },
         });
     }
     None
@@ -465,7 +503,7 @@ fn shortcut_target(
 
 /// `main.js:interactTarget()` — what E would do right now, in the JS's order: endgame (altar, elevator) →
 /// NPC → hub building / stairs → zone items → gates → shortcuts → the zone's extraction marker.
-fn resolve_interact(w: &Sim, fade_out: bool) -> Option<Interaction> {
+fn resolve_interact(w: &Sim, fade_out: bool) -> Option<Resolved> {
     let mode = w.mode();
     if fade_out || !matches!(mode, GameMode::Zone | GameMode::Hub) {
         return None;
@@ -482,11 +520,30 @@ fn resolve_interact(w: &Sim, fade_out: bool) -> Option<Interaction> {
             if let Some(def) = data.zone(&zone.id) {
                 if economy::in_source(def, &zone.map) {
                     if economy::altar_in_reach(cfg, &zone.map, p.x, p.z) {
-                        return Some(Interaction::Altar);
+                        return Some(Resolved {
+                            target: Interaction::Altar,
+                            label: "[E] Kneel at the Source".to_string(),
+                        });
                     }
                     if let Some(st) = zone.map.stairs {
                         if grid::dist2d(st.marker.x, st.marker.z, p.x, p.z) <= r {
-                            return Some(Interaction::Elevator);
+                            // `endgame.js:interactTarget` — the label warns once you carry loot,
+                            // and again while the second press is armed (`S.rideConfirmT`).
+                            let armed = zone
+                                .source
+                                .as_ref()
+                                .is_some_and(|run| run.ride_confirm_t > 0.0);
+                            let label = if p.carried.total() == 0 {
+                                "[E] Ride up — abandon the descent"
+                            } else if armed {
+                                "[E] Ride up now — what you carry stays below"
+                            } else {
+                                "[E] Ride up — abandon the descent (loot is lost)"
+                            };
+                            return Some(Resolved {
+                                target: Interaction::Elevator,
+                                label: label.to_string(),
+                            });
                         }
                     }
                 }
@@ -501,24 +558,41 @@ fn resolve_interact(w: &Sim, fade_out: bool) -> Option<Interaction> {
         mode == GameMode::Hub,
         &view,
     ) {
-        return Some(Interaction::Npc {
-            id: n.id,
-            free: n.free,
+        return Some(Resolved {
+            target: Interaction::Npc {
+                id: n.id,
+                free: n.free,
+            },
+            label: n.label,
         });
     }
 
     // hub.js:interactTarget
     if mode == GameMode::Hub {
         if let Some(hub) = w.hub_map.0.as_ref() {
+            // `hub.js:interactTarget` builds the label itself; `ui.js:targetLabel` takes it as-is.
             match economy::hub_interact_target(data, &w.save.0, &w.hub.0, &hub.map, p.x, p.z) {
-                Some(HubInteract::Build { id, .. }) => {
-                    return Some(Interaction::Building { id, built: false })
+                Some(HubInteract::Build { id, label }) => {
+                    return Some(Resolved {
+                        target: Interaction::Building { id, built: false },
+                        label,
+                    })
                 }
-                Some(HubInteract::Building { id, .. }) => {
-                    return Some(Interaction::Building { id, built: true })
+                Some(HubInteract::Building { id, label }) => {
+                    return Some(Resolved {
+                        target: Interaction::Building { id, built: true },
+                        label,
+                    })
                 }
-                Some(HubInteract::Descend { zone_id, lock, .. }) => {
-                    return Some(Interaction::Descend { zone_id, lock })
+                Some(HubInteract::Descend {
+                    zone_id,
+                    lock,
+                    label,
+                }) => {
+                    return Some(Resolved {
+                        target: Interaction::Descend { zone_id, lock },
+                        label,
+                    })
                 }
                 None => {}
             }
@@ -540,14 +614,28 @@ fn resolve_interact(w: &Sim, fade_out: bool) -> Option<Interaction> {
         }
     }
     if let Some(index) = best {
-        return Some(Interaction::Item { index });
+        let kind = zone.items[index].kind;
+        return Some(Resolved {
+            target: Interaction::Item { index },
+            label: format!("[E] Pick up {}", crate::ui::screens::item_label(data, kind)),
+        });
     }
     if let Some((cx, cz)) = gate_target(&zone.map, &zone.doors, p, r) {
-        let def = data.zone(&zone.id);
-        let locked = def
-            .map(|d| world::gate_status(d, &w.save.0, &cfg.tools, Some(false)).locked)
-            .unwrap_or(false);
-        return Some(Interaction::Gate { cx, cz, locked });
+        let st = data
+            .zone(&zone.id)
+            .map(|d| world::gate_status(d, &w.save.0, &cfg.tools, Some(false)));
+        let locked = st.as_ref().is_some_and(|g| g.locked);
+        let tool_name = st
+            .and_then(|g| g.tool_name)
+            .unwrap_or_else(|| "a tool".to_string());
+        return Some(Resolved {
+            target: Interaction::Gate { cx, cz, locked },
+            label: if locked {
+                format!("Locked — needs {tool_name}")
+            } else {
+                "[E] Open the gate".to_string()
+            },
+        });
     }
     if let Some(sc) = shortcut_target(&zone.map, &zone.doors, p, r) {
         return Some(sc);
@@ -555,12 +643,30 @@ fn resolve_interact(w: &Sim, fade_out: bool) -> Option<Interaction> {
     // the extraction marker: bank in a zone
     if let Some(st) = zone.map.stairs {
         if grid::dist2d(st.marker.x, st.marker.z, p.x, p.z) <= r {
-            return Some(Interaction::Bank {
-                empty: p.carried.is_empty(),
+            let empty = p.carried.is_empty();
+            return Some(Resolved {
+                target: Interaction::Bank { empty },
+                label: if empty {
+                    "[E] Return to the Lantern".to_string()
+                } else {
+                    "[E] Bank loot".to_string()
+                },
             });
         }
     }
     None
+}
+
+/// `main.js:interactTarget()` written into [`CurrentInteract`] once per fixed tick, so the HUD can
+/// print `ui.js:targetLabel(...)` without re-resolving it at render rate.
+fn track_interact(w: Sim, fade: Res<crate::resources::Fade>, mut current: ResMut<CurrentInteract>) {
+    if !w.ready() {
+        return;
+    }
+    let want = resolve_interact(&w, fade.mode == crate::resources::FadeMode::Out);
+    if current.0 != want {
+        current.0 = want;
+    }
 }
 
 /// `main.js:interact()` — resolve the target, run it, then emit `interact {target, handled, x, z}`.
@@ -570,16 +676,16 @@ fn interact(
     fade_out: bool,
     ev: &mut MessageWriter<SimMessage>,
 ) -> bool {
-    let target = resolve_interact(w, fade_out);
-    let handled = match &target {
-        Some(t) => do_interact(w, queue, t, ev),
+    let resolved = resolve_interact(w, fade_out);
+    let handled = match &resolved {
+        Some(r) => do_interact(w, queue, &r.target, ev),
         None => false,
     };
     let (x, z) = (w.player.x, w.player.z);
     emit(
         ev,
         vec![SimEvent::Interact {
-            target: target.as_ref().map(Interaction::kind),
+            target: resolved.as_ref().map(|r| r.target.kind()),
             handled,
             x,
             z,
@@ -640,7 +746,10 @@ fn do_interact(
                 (true, "board") => "board",
                 (true, _) => "service",
             };
-            queue.push(DebugCommand::OpenMenu(kind.to_string()));
+            queue.push(DebugCommand::OpenMenu {
+                kind: kind.to_string(),
+                id: Some(id.clone()),
+            });
             true
         }
         Interaction::Altar => {
@@ -835,7 +944,10 @@ fn talk_npc(
     match w.npcs.0.talk(def, offer.as_ref(), &titles) {
         Some((_dlg, evs)) => {
             emit(ev, evs);
-            queue.push(DebugCommand::OpenMenu("dialog".to_string()));
+            queue.push(DebugCommand::OpenMenu {
+                kind: "dialog".to_string(),
+                id: Some(id.to_string()),
+            });
             true
         }
         None => false,
@@ -857,8 +969,9 @@ fn is_key(data: &GameData, action: &str, code: &str) -> bool {
 /// `main.js`'s `keydown` listener. Every branch ends in `key {code, mode}`, exactly as the JS does.
 ///
 /// Title, death-screen and menu *navigation* are the UI lane's; what reaches `run.rs` is forwarded as a
-/// [`DebugCommand`] (`ReturnToHub`, `OpenPause`, `ClosePause`, `CloseMenu`, `Accept`). Volume / mute and the
-/// minimap toggle belong to the audio and UI lanes and are not handled here.
+/// [`DebugCommand`] (`ReturnToHub`, `OpenPause`, `CloseMenu`, `Accept`). Escape inside the pause menu is
+/// the UI lane's too — that menu is a panel stack, and only its root closes (`ui::keys`). Volume / mute
+/// (audio lane) and the minimap toggle (UI lane → `ToggleMinimap`) are not handled here either.
 fn on_key(
     w: &mut Sim,
     queue: &mut DebugQueue,
@@ -904,11 +1017,14 @@ fn on_key(
         GameMode::Menu => {
             let is_pause = menu.0.as_deref() == Some("pause");
             if menu_close {
-                queue.push(if is_pause {
-                    DebugCommand::ClosePause
-                } else {
-                    DebugCommand::CloseMenu
-                });
+                // The pause menu is a *stack*: Escape pops a sub-panel (Controls, Sound, a confirm)
+                // and only closes the menu at its root. The UI lane owns that stack, so Escape is
+                // forwarded as a bare `key` event and `ui::keys` decides (`ui.js:menu.key`'s
+                // `Escape` branch → `panel.onEscape` → `A.closePause()`). Every other menu kind has
+                // no depth, so closing it here is the whole behaviour.
+                if !is_pause {
+                    queue.push(DebugCommand::CloseMenu);
+                }
             } else if menu.0.as_deref() == Some("dialog") {
                 // npc.js:onKey — 1 / Enter / Space accepts the offer, then the shell closes the menu
                 if let Some(id) = w.npcs.0.on_key(code, true) {
@@ -944,7 +1060,7 @@ fn on_key(
                 Some("top_up") => {
                     top_up(w, ev);
                 }
-                // `KEYS.minimap` (Tab), `mute`, `volUp` / `volDown`: the ui and audio lanes
+                // `KEYS.minimap` (Tab), `mute`, `vol_up` / `vol_down`: the ui and audio lanes
                 _ => {}
             }
             key_event(ev);
@@ -1139,10 +1255,11 @@ Plugin
 pub fn plugin(app: &mut App) {
     app.init_resource::<PlayerActions>()
         .init_resource::<ExploreTimer>()
+        .init_resource::<CurrentInteract>()
         .add_systems(FixedUpdate, handle_debug.in_set(DebugSet::Handle))
         .add_systems(
             FixedUpdate,
-            (player_actions, player_movement, player_lamp)
+            (player_actions, player_movement, player_lamp, track_interact)
                 .chain()
                 .in_set(SimSet::Player),
         );
@@ -1527,6 +1644,39 @@ mod tests {
             .resource::<DebugQueue>()
             .0
             .contains(&DebugCommand::OpenPause));
+    }
+
+    /// `ui.js:targetLabel(interactTarget())` is resolved once a tick into [`CurrentInteract`],
+    /// which is what the HUD's hint line prints.
+    #[test]
+    fn the_interact_target_and_its_label_are_published_every_tick() {
+        let mut app = headless_app();
+        send(&mut app, DebugCommand::Begin);
+        step(&mut app, 0.5);
+        // `spawnAt` puts the player on the hub stairs, so `hub.js:interactTarget` answers Descend.
+        let c = app.world().resource::<CurrentInteract>().clone();
+        assert!(
+            matches!(c.target(), Some(Interaction::Descend { .. })),
+            "{c:?}"
+        );
+        assert!(c.label().starts_with("[E] Descend — "), "{c:?}");
+
+        // In a zone the same marker is the extraction point: empty-handed it reads "Return".
+        send(&mut app, DebugCommand::GotoZone("undercroft".to_string()));
+        step(&mut app, 0.5);
+        let c = app.world().resource::<CurrentInteract>().clone();
+        assert_eq!(c.target(), Some(&Interaction::Bank { empty: true }));
+        assert_eq!(c.label(), "[E] Return to the Lantern");
+
+        app.world_mut().resource_mut::<Player>().carried = Carried {
+            oil: 1,
+            relic: 0,
+            rich: 0,
+            quest: 0,
+        };
+        step(&mut app, 1.0 / 60.0);
+        let c = app.world().resource::<CurrentInteract>().clone();
+        assert_eq!(c.label(), "[E] Bank loot");
     }
 
     #[test]

@@ -8,8 +8,8 @@
 //! | mode | `player.rs::on_key` | this module |
 //! |---|---|---|
 //! | `TITLE` | nothing | the whole main menu, `Backspace` ×2 → `Reset` |
-//! | `HUB` / `ZONE` | `Escape` → `OpenPause`; `F Q R E T` | `Tab` → minimap |
-//! | `MENU` (`pause`) | `Escape` → `ClosePause` | ↑↓ / W S, ← →, Enter / Space / E, 1–9, `Escape` in a sub-panel |
+//! | `HUB` / `ZONE` | `Escape` → `OpenPause`; `F Q R E T` | `Tab` → `ToggleMinimap` |
+//! | `MENU` (`pause`) | nothing — the stack is this lane's | ↑↓ / W S, ← →, Enter / Space / E, 1–9, `Escape` (pops a sub-panel, `ClosePause` at the root) |
 //! | `MENU` (`dialog`) | `Escape` → `CloseMenu`; 1 / Enter / Space → `Accept` + `CloseMenu` | nothing |
 //! | `MENU` (`board` / `build` / `service`) | `Escape` → `CloseMenu` | 1–9, Enter / Space / E |
 //! | `DEAD` | Enter / Space → `ReturnToHub` | nothing |
@@ -60,8 +60,9 @@ pub fn route_keys(
             "TITLE" | "LOADING" => title_key(&game, &mut ui, &mut queue, &mut toasts, code),
             "MENU" => menu_key(&game, &kind, &mut ui, &mut queue, code),
             "ENDING" => ending_key(&game, &mut ui, &mut queue, code),
+            // `main.js:586` — Tab; `run.rs` owns the flag and the Cartographer's Table gate.
             "HUB" | "ZONE" | "DYING" if is_key(&game, "minimap", code) => {
-                ui.minimap_toggle_requested = true;
+                queue.push(DebugCommand::ToggleMinimap);
             }
             _ => {}
         }
@@ -92,20 +93,18 @@ fn title_key(
     }
     let ctx = ui.menu_ctx.clone();
     let act = ui.menu.key(code, &ctx).act;
-    apply_item(ui, queue, act);
+    apply_item(game, ui, queue, act);
 }
 
 /// `main.js:571–577` — `MENU` mode.
 fn menu_key(game: &Game, kind: &MenuKind, ui: &mut UiState, queue: &mut DebugQueue, code: &str) {
     match kind.0.as_deref() {
         Some("pause") => {
-            // `player.rs` already turns Escape at the root into `ClosePause`; only a sub-panel pops.
-            if is_key(game, "menu_close", code) && ui.menu.depth() <= 1 {
-                return;
-            }
+            // Escape is entirely this lane's: `MenuState::key` pops a sub-panel, and at the root
+            // falls through to `pauseRoot`'s `onEscape` — `ItemAct::Cmd(ClosePause)`.
             let ctx = ui.menu_ctx.clone();
             let act = ui.menu.key(code, &ctx).act;
-            apply_item(ui, queue, act);
+            apply_item(game, ui, queue, act);
         }
         // `npc.js:onKey` is `player.rs`'s; Escape is too.
         Some("dialog") | None => {}
@@ -116,13 +115,13 @@ fn menu_key(game: &Game, kind: &MenuKind, ui: &mut UiState, queue: &mut DebugQue
             };
             if let Some(n) = digit(code) {
                 if let Some(Some(p)) = screen.picks.get(n - 1) {
-                    apply_pick(ui, queue, p.clone());
+                    apply_pick(queue, p.clone());
                 }
                 return;
             }
             if is_key(game, "confirm", code) || is_key(game, "interact", code) {
                 match &screen.confirm {
-                    Some(p) => apply_pick(ui, queue, p.clone()),
+                    Some(p) => apply_pick(queue, p.clone()),
                     None => queue.push(DebugCommand::CloseMenu),
                 }
             }
@@ -137,18 +136,18 @@ fn ending_key(game: &Game, ui: &mut UiState, queue: &mut DebugQueue, code: &str)
     };
     if let Some(n) = digit(code) {
         if let Some(Some(p)) = screen.picks.get(n - 1) {
-            apply_pick(ui, queue, p.clone());
+            apply_pick(queue, p.clone());
         }
         return;
     }
     if is_key(game, "menu_close", code) && screen.confirm.is_none() {
-        // `endgame.js:cancel()` — no `DebugCommand` reaches `run.rs`'s `cancel_choice`; see the report.
-        warn_missing("CancelChoice");
+        // `endgame.js:cancel()` — Esc on the choice screen goes back to the run.
+        queue.push(DebugCommand::CancelChoice);
         return;
     }
     if is_key(game, "confirm", code) || is_key(game, "interact", code) {
         if let Some(p) = screen.confirm.clone() {
-            apply_pick(ui, queue, p);
+            apply_pick(queue, p);
         }
     }
 }
@@ -164,19 +163,43 @@ fn digit(code: &str) -> Option<usize> {
     }
 }
 
-/// Perform what activating a list-menu row produced.
-pub fn apply_item(ui: &mut UiState, queue: &mut DebugQueue, act: Option<ItemAct>) {
+/// `AUDIO.volStep` — how far one `←` / `→` / `[` / `]` moves the master volume.
+fn vol_step(game: &Game) -> f32 {
+    let step = game.get().map_or(0.0, |a| a.data.config.audio.vol_step);
+    if step > 0.0 {
+        step
+    } else {
+        0.1
+    }
+}
+
+/// Perform what activating a list-menu row produced. The two audio rows become
+/// [`DebugCommand::SetVolume`] / [`DebugCommand::ToggleMute`], which the audio lane drains
+/// (it owns `save.audio`).
+pub fn apply_item(game: &Game, ui: &mut UiState, queue: &mut DebugQueue, act: Option<ItemAct>) {
+    let vol = ui.menu_ctx.volume;
     match act {
         Some(ItemAct::Cmd(c)) => queue.push(c),
-        Some(ItemAct::Volume(_)) => warn_missing("SetVolume"),
-        Some(ItemAct::ToggleMute) => warn_missing("ToggleMute"),
+        // `ui.js:soundPanel` `adjust(dir)` — `setVolume(vol + dir × step)`.
+        Some(ItemAct::Volume(dir)) => {
+            queue.push(DebugCommand::SetVolume(vol + dir as f32 * vol_step(game)));
+        }
+        // … and its `run()`, which wraps 100 % back to 0 instead of stepping.
+        Some(ItemAct::VolumeCycle) => {
+            let next = if vol >= 0.999 {
+                0.0
+            } else {
+                vol + vol_step(game)
+            };
+            queue.push(DebugCommand::SetVolume(next));
+        }
+        Some(ItemAct::ToggleMute) => queue.push(DebugCommand::ToggleMute),
         Some(ItemAct::Push(_)) | Some(ItemAct::Pop) | Some(ItemAct::Nothing) | None => {}
     }
-    let _ = ui;
 }
 
 /// Perform a `[n]` pick from a text screen.
-pub fn apply_pick(ui: &mut UiState, queue: &mut DebugQueue, pick: Pick) {
+pub fn apply_pick(queue: &mut DebugQueue, pick: Pick) {
     match pick {
         Pick::Cmd(c) => queue.push(c),
         Pick::Cmds(cs) => {
@@ -184,12 +207,5 @@ pub fn apply_pick(ui: &mut UiState, queue: &mut DebugQueue, pick: Pick) {
                 queue.push(c);
             }
         }
-        Pick::Missing(what) => warn_missing(what),
-        Pick::ToggleMinimap => ui.minimap_toggle_requested = true,
     }
-}
-
-/// One line per missing command, so a play session says exactly what `debug.rs` still needs.
-fn warn_missing(what: &str) {
-    warn!("ui: no DebugCommand for {what} — the row is inert (see the ui lane report)");
 }

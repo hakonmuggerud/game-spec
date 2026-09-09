@@ -14,9 +14,8 @@ use undercroft_sim::economy::{self, LampState};
 use undercroft_sim::player::Carried;
 use undercroft_sim::{contracts, SimRng};
 
-use crate::resources::{
-    Game, HubMapRes, HubRes, LampRes, Npcs, Player, PlayerViewRes, SaveRes, ZoneRes,
-};
+use crate::player::CurrentInteract;
+use crate::resources::{Game, HubRes, LampRes, Npcs, Player, PlayerViewRes, SaveRes, ZoneRes};
 use crate::state::{GameMode, Mode, PrevMode};
 use crate::tick::Clock;
 use crate::ui::style::*;
@@ -67,9 +66,9 @@ pub fn flame_line(tiers: &[Tier], points: u32, tier: u32) -> String {
     format!("Flame: tier {tier} ({next})")
 }
 
-/// `ui.js:hintText()`, minus the zone's interact label: `player.rs`'s `interactTarget` resolver is
-/// private, so only the hub half (`economy::hub_interact_target`, which is in the sim) is available.
-/// See the lane report — this is the one HUD element that is not complete.
+/// `ui.js:hintText()` in full. `target_label` is `targetLabel(ctx.actions.interactTarget())` —
+/// `player.rs` resolves it once per fixed tick into [`CurrentInteract`], both in the hub (where it
+/// is the whole line) and in a zone (where it is one of the `·`-joined parts).
 #[allow(clippy::too_many_arguments)]
 pub fn hint_line(
     cfg: &Config,
@@ -77,7 +76,7 @@ pub fn hint_line(
     mode: GameMode,
     seen: bool,
     creature_hint: &str,
-    hub_label: &str,
+    target_label: &str,
     lamp: &LampState,
     carried: &Carried,
     in_pool: bool,
@@ -86,7 +85,7 @@ pub fn hint_line(
         return override_text.to_string();
     }
     if mode == GameMode::Hub {
-        return hub_label.to_string();
+        return target_label.to_string();
     }
     if mode != GameMode::Zone {
         return String::new();
@@ -98,6 +97,10 @@ pub fn hint_line(
     }
     if !creature_hint.is_empty() && !parts.iter().any(|p| p == creature_hint) {
         parts.push(creature_hint.to_string());
+    }
+    // `ui.js:73` — the action prompt sits between the alarm lines and the lamp status.
+    if !target_label.is_empty() {
+        parts.push(target_label.to_string());
     }
     if lamp.oil <= 0.0 {
         parts.push(if carried.oil > 0 {
@@ -348,11 +351,13 @@ pub struct HudSource<'w> {
     pub player: Res<'w, Player>,
     pub view: Res<'w, PlayerViewRes>,
     pub zone: Res<'w, ZoneRes>,
-    pub hub_map: Res<'w, HubMapRes>,
     pub npcs: Res<'w, Npcs>,
     pub clock: Res<'w, Clock>,
     /// `main.js:53 state.prevMode` — `hub.js:updateHud` reads the mode *behind* an open menu.
     pub prev: Res<'w, PrevMode>,
+    /// `ctx.actions.interactTarget()` as `player.rs` resolved it this tick, with its
+    /// `ui.js:targetLabel` text.
+    pub interact: Res<'w, CurrentInteract>,
 }
 
 /// `ui.js:update(c, dt)` → `updateHUD()`.
@@ -411,7 +416,8 @@ pub fn update_hud(
         }
     }
 
-    let hub_label = hub_target_label(&src, m);
+    // `ui.js:targetLabel(ctx.actions.interactTarget())` — resolved by `player.rs` (`track_interact`).
+    let target_label = src.interact.label().to_string();
     let creature_hint = creature_hint(&src, m);
     let contracts_text = contracts::hud_lines(src.game.data(), &src.save.0).join("\n");
     let follower_text = src
@@ -454,7 +460,7 @@ pub fn update_hud(
                 m,
                 ui.seen_t > 0.0,
                 &creature_hint,
-                &hub_label,
+                &target_label,
                 lamp,
                 carried,
                 src.player.in_pool,
@@ -473,26 +479,6 @@ fn pip(ready: bool) -> &'static str {
     } else {
         "○"
     }
-}
-
-/// `hub.js:interactTarget` through the sim, for the hub half of the hint line.
-fn hub_target_label(src: &HudSource, mode: GameMode) -> String {
-    if mode != GameMode::Hub {
-        return String::new();
-    }
-    let Some(hub) = src.hub_map.0.as_ref() else {
-        return String::new();
-    };
-    economy::hub_interact_target(
-        src.game.data(),
-        &src.save.0,
-        &src.hub.0,
-        &hub.map,
-        src.player.x,
-        src.player.z,
-    )
-    .map(|t| crate::ui::screens::hub_target_label(&t))
-    .unwrap_or_default()
 }
 
 /// `hunter.js:hint()` — the per-creature HUD row (`creature::hint`, a read-only sim call; the throwaway

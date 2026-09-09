@@ -39,8 +39,12 @@ pub enum ItemAct {
     Pop,
     /// Queue a command (`A.begin()`, `A.closePause()`, …).
     Cmd(DebugCommand),
-    /// `soundPanel` volume: step by ±0.1 (`a.setVolume`). No `DebugCommand` carries this yet.
+    /// `soundPanel` volume, adjusted by ← → / `[` `]`: step by `dir × AUDIO.volStep`
+    /// (`a.setVolume(vol + dir * 0.1)`).
     Volume(i32),
+    /// `soundPanel` volume *activated* (Enter): `a.setVolume(vol >= 0.999 ? 0 : vol + 0.1)` — the
+    /// one row whose `run` differs from its `adjust`.
+    VolumeCycle,
     /// `soundPanel` mute (`a.toggleMute`).
     ToggleMute,
     /// A row that only reads (the "Nothing more to learn here." kind).
@@ -345,7 +349,7 @@ impl MenuState {
             return KeyResult::default();
         }
         let act = match it.act {
-            ItemAct::Volume(_) => Some(ItemAct::Volume(dir)),
+            ItemAct::VolumeCycle | ItemAct::Volume(_) => Some(ItemAct::Volume(dir)),
             _ => None,
         };
         self.render(ctx);
@@ -549,9 +553,10 @@ fn controls_panel() -> Panel {
     }
 }
 
-/// No `DebugCommand` writes `SaveRes.audio` yet (see the lane report), so the Sound panel's two
-/// settings rows are drawn disabled. Flip this to `true` once `SetVolume` / `ToggleMute` exist.
-pub const AUDIO_COMMANDS_EXIST: bool = false;
+/// `DebugCommand::SetVolume` / `ToggleMute` exist and the audio lane drains them, so the Sound
+/// panel's two settings rows are live. Kept as a named constant because the panel and its test both
+/// branch on it.
+pub const AUDIO_COMMANDS_EXIST: bool = true;
 
 /// `ui.js:soundPanel(menu)`.
 fn sound_panel(ctx: &MenuCtx) -> Panel {
@@ -563,7 +568,7 @@ fn sound_panel(ctx: &MenuCtx) -> Panel {
                 "Volume  {bar}  {}%",
                 (ctx.volume.clamp(0.0, 1.0) * 100.0).round()
             ),
-            ItemAct::Volume(1),
+            ItemAct::VolumeCycle,
         )
         .key("◂ ▸")
         .note("← → or [ ] to change")
