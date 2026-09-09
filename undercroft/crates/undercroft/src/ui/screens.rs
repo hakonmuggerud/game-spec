@@ -384,7 +384,8 @@ pub fn death(lost: &str, lost_any: bool) -> TextScreen {
             },
         ],
         foot: String::new(),
-        cta: "Click or Enter to return to the Lantern".to_string(),
+        // `prototype/index.html:122` — verbatim; Enter/Space/E work too, as they do in the JS.
+        cta: "Click to return to the Lantern".to_string(),
         danger_title: true,
         ..TextScreen::default()
     }
@@ -535,6 +536,8 @@ mod tests {
         assert_eq!(s.lines[0], "Lost: 2 flasks.");
         assert!(s.lines[1].starts_with("Your bundle lies"));
         assert!(death("nothing", false).lines[1].starts_with("You carried nothing"));
+        // `prototype/index.html:122` — the call to action is the prototype's, word for word.
+        assert_eq!(s.cta, "Click to return to the Lantern");
     }
 
     #[test]
