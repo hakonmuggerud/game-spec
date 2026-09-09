@@ -45,6 +45,12 @@ pub const TARGET_COLOR: [u8; 4] = rgb(0xffd080);
 pub const SPOT_COLOR: [u8; 4] = rgb(0x8a7a5a);
 /// A planted lantern.
 pub const LANTERN_COLOR: [u8; 4] = rgb(0xffc070);
+/// `hub.js:779` — a built hub building's anchor square.
+pub const BUILDING_BUILT_COLOR: [u8; 4] = rgb(0xffd080);
+/// `hub.js:779` — an unlocked-but-unbuilt (ghost) hub building's anchor square.
+pub const BUILDING_GHOST_COLOR: [u8; 4] = rgb(0x5a5040);
+/// `hub.js:795` — an NPC present in the zone (captive or following).
+pub const NPC_COLOR: [u8; 4] = rgb(0xb8862a);
 /// The player arrow.
 pub const PLAYER_COLOR: [u8; 4] = [255, 255, 255, 255];
 
@@ -213,6 +219,23 @@ pub struct MiniShortcut {
     pub open: bool,
 }
 
+/// `hub.js:779` — one `BUILD_ORDER` entry, at its anchor cell (hub only).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MiniBuilding {
+    pub x: f32,
+    pub z: f32,
+    pub built: bool,
+}
+
+/// `hub.js:795` — one NPC present in the zone: a captive (shown once its cell is explored) or the
+/// current follower (always shown, explored or not).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MiniNpc {
+    pub x: f32,
+    pub z: f32,
+    pub following: bool,
+}
+
 /// Everything `drawMinimap` overlays on the cells.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct MiniMarks {
@@ -221,6 +244,10 @@ pub struct MiniMarks {
     pub shortcuts: Vec<MiniShortcut>,
     /// Active contract targets in this zone.
     pub targets: Vec<(f32, f32)>,
+    /// Hub buildings, in `BUILD_ORDER` (hub only).
+    pub buildings: Vec<MiniBuilding>,
+    /// NPCs present in the zone (zone only).
+    pub npcs: Vec<MiniNpc>,
     /// `(x, z, yaw)` of the player, when standing on this map.
     pub player: Option<(f32, f32, f32)>,
 }
@@ -271,6 +298,17 @@ pub fn draw(canvas: &mut MiniCanvas, map: &ParsedMap, bits: Option<&[u8]>, marks
             fpx * 0.6,
             FLAME_COLOR,
         );
+    }
+    for b in &marks.buildings {
+        let c = if b.built {
+            BUILDING_BUILT_COLOR
+        } else {
+            BUILDING_GHOST_COLOR
+        };
+        let x0 = (canvas.x_of(b.x, mox) - fpx * 0.4).round() as i32;
+        let y0 = (canvas.z_of(b.z) - fpx * 0.4).round() as i32;
+        let sz = (fpx * 0.8).round() as i32;
+        canvas.fill_rect(x0, y0, sz, sz, c);
     }
     for (x, z) in &marks.targets {
         canvas.diamond(
@@ -331,6 +369,17 @@ pub fn draw(canvas: &mut MiniCanvas, map: &ParsedMap, bits: Option<&[u8]>, marks
                 canvas.z_of(s.z),
                 (fpx * 0.6).max(1.5),
                 SHORTCUT_OPEN,
+            );
+        }
+    }
+    for n in &marks.npcs {
+        let (cx, cz) = cell_of(map, n.x, n.z);
+        if n.following || seen(cx, cz) {
+            canvas.dot(
+                canvas.x_of(n.x, mox),
+                canvas.z_of(n.z),
+                fpx * 0.4,
+                NPC_COLOR,
             );
         }
     }
@@ -433,10 +482,7 @@ mod tests {
                 x: 1.5,
                 z: 1.5,
             }],
-            lanterns: vec![],
-            shortcuts: vec![],
-            targets: vec![],
-            player: None,
+            ..MiniMarks::default()
         };
         draw(&mut c, &m, None, &marks);
         let (x, y) = (c.x_of(1.5, 0), c.z_of(1.5));
@@ -484,5 +530,73 @@ mod tests {
         };
         draw(&mut c, &m, Some(&bits), &marks);
         assert_eq!(c.get(c.ox, c.oz), [0, 0, 0, 0]);
+    }
+
+    /// `hub.js:779` — one square per `BUILD_ORDER` entry at its anchor cell, coloured by build state.
+    /// The hub always shows everything, so `bits` is `None`.
+    #[test]
+    fn hub_buildings_draw_their_anchor_square_built_or_ghost() {
+        let m = tiny();
+        let mut c = MiniCanvas::new(60, 60, &m, 5);
+        let marks = MiniMarks {
+            buildings: vec![
+                MiniBuilding {
+                    x: 0.5,
+                    z: 0.5,
+                    built: true,
+                },
+                MiniBuilding {
+                    x: 2.5,
+                    z: 2.5,
+                    built: false,
+                },
+            ],
+            ..MiniMarks::default()
+        };
+        draw(&mut c, &m, None, &marks);
+        let (bx, by) = (c.x_of(0.5, 0) as i32, c.z_of(0.5) as i32);
+        assert_eq!(c.get(bx, by), BUILDING_BUILT_COLOR);
+        // a corner of the same cell, outside the 0.8-cell square, still shows the wall beneath it
+        assert_eq!(c.get(c.ox, c.oz), cell_color(CellKind::Wall));
+        let (gx, gy) = (c.x_of(2.5, 0) as i32, c.z_of(2.5) as i32);
+        assert_eq!(c.get(gx, gy), BUILDING_GHOST_COLOR);
+    }
+
+    /// `hub.js:795` — a dot per NPC present in the zone: hidden in the fog unless it is the
+    /// follower, which always shows.
+    #[test]
+    fn a_zone_npc_dot_shows_once_explored_or_always_while_following() {
+        let m = tiny();
+        let mut c = MiniCanvas::new(60, 60, &m, 5);
+        let (x, y) = (c.x_of(1.5, 0) as i32, c.z_of(1.5) as i32);
+        let marks = MiniMarks {
+            npcs: vec![MiniNpc {
+                x: 1.5,
+                z: 1.5,
+                following: false,
+            }],
+            ..MiniMarks::default()
+        };
+        // nothing explored: the captive is hidden
+        let bits = vec![0u8; 2];
+        draw(&mut c, &m, Some(&bits), &marks);
+        assert_eq!(c.get(x, y), [0, 0, 0, 0]);
+        // its cell explored: the captive shows
+        let mut bits = vec![0u8; 2];
+        bits[0] = 1 << 4;
+        draw(&mut c, &m, Some(&bits), &marks);
+        assert_eq!(c.get(x, y), NPC_COLOR);
+        // a follower shows even in the fog
+        let bits = vec![0u8; 2];
+        let marks = MiniMarks {
+            npcs: vec![MiniNpc {
+                x: 1.5,
+                z: 1.5,
+                following: true,
+            }],
+            ..MiniMarks::default()
+        };
+        draw(&mut c, &m, Some(&bits), &marks);
+        assert_eq!(c.get(x, y), NPC_COLOR);
     }
 }

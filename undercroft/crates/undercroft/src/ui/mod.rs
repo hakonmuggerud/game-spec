@@ -41,14 +41,16 @@ use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 
 use undercroft_sim::economy;
 
+use undercroft_sim::follower::{NpcState, Place};
 use undercroft_sim::{contracts, SimEvent};
 
+use crate::hub::buildings::{desired_state, BuildState};
 use crate::messages::SimMessage;
-use crate::resources::{Game, HubMapRes, HubRes, Player, SaveRes, Toasts, ZoneRes};
+use crate::resources::{Game, HubMapRes, HubRes, Npcs, Player, SaveRes, Toasts, ZoneRes};
 use crate::run::{EndingScreenRes, LastDeath, MenuTargetRes, MinimapRes};
 use crate::state::{GameMode, MenuKind, Mode, PrevMode};
 use menu::{MenuCtx, MenuState, PanelKind};
-use minimap::{MiniCanvas, MiniItem, MiniMarks, MiniShortcut};
+use minimap::{MiniBuilding, MiniCanvas, MiniItem, MiniMarks, MiniNpc, MiniShortcut};
 use render::{PanelView, ScreenRoot};
 use screens::TextScreen;
 use style::UiFont;
@@ -396,6 +398,8 @@ fn update_minimap(
     save: Res<SaveRes>,
     zone: Res<ZoneRes>,
     hub_map: Res<HubMapRes>,
+    hub: Res<HubRes>,
+    npcs: Res<Npcs>,
     player: Res<Player>,
     minimap: Res<MinimapRes>,
     image: Option<Res<MinimapImage>>,
@@ -448,6 +452,32 @@ fn update_minimap(
         player: Some((player.x, player.z, player.yaw)),
         ..MiniMarks::default()
     };
+    if hub_mode {
+        // `hub.js:779` — one square per `BUILD_ORDER` entry at its anchor cell.
+        marks.buildings = asset
+            .data
+            .buildings
+            .order
+            .iter()
+            .filter_map(|id| {
+                let b = asset.data.buildings.buildings.get(id)?;
+                let state = desired_state(&asset.data, &save.0, hub.0.tier, id);
+                if state == BuildState::None {
+                    return None;
+                }
+                let a = b
+                    .anchor
+                    .parse::<u8>()
+                    .ok()
+                    .and_then(|d| map.anchors.get(&d))?;
+                Some(MiniBuilding {
+                    x: a.x,
+                    z: a.z,
+                    built: state == BuildState::Built,
+                })
+            })
+            .collect();
+    }
     if let (false, Some(z)) = (hub_mode, zone.get()) {
         marks.items = z
             .items
@@ -475,6 +505,18 @@ fn update_minimap(
         marks.targets = contracts::targets(&asset.data, &save.0, Some(&z.id))
             .into_iter()
             .filter_map(|t| Some((t.x? + map.ox as f32, t.z?)))
+            .collect();
+        // `hub.js:795` — a dot per NPC present in the zone (captive or following).
+        marks.npcs = npcs
+            .0
+            .present()
+            .into_iter()
+            .filter(|n| n.place == Some(Place::Zone))
+            .map(|n| MiniNpc {
+                x: n.x,
+                z: n.z,
+                following: n.state == NpcState::Follow,
+            })
             .collect();
     }
     let mut canvas = MiniCanvas::new(
