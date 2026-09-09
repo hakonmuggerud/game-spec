@@ -1,4 +1,4 @@
-//! Stage-3 acceptance tests (PHASE2_SKELETON.md §7): end-to-end behaviour driven only through the
+//! Stage-3 acceptance tests (docs/history/PHASE2_SKELETON.md §7): end-to-end behaviour driven only through the
 //! `DebugCommand` console (the Rust `window.__game.actions`), exactly the way a real client would
 //! start a run, die, bank and so on. Each test builds its own [`headless_app`] (a fresh in-memory
 //! save store per app — see `headless.rs`) and is independent of the others.
@@ -32,7 +32,7 @@ fn app_in_zone(id: &str) -> App {
     send(&mut app, DebugCommand::GotoZone(id.into()));
     step(&mut app, 0.5);
     // `NextState` is applied once per frame, before `FixedUpdate` — one more tick makes sure the
-    // mode this test reads has actually caught up (PHASE2_SKELETON.md §5 / the run lane's note).
+    // mode this test reads has actually caught up (docs/history/PHASE2_SKELETON.md §5 / the run lane's note).
     step(&mut app, 1.0 / 60.0);
     assert_eq!(
         mode(&app),
@@ -363,7 +363,7 @@ fn unlock_all_then_zero_points_retiers_and_give_tool_is_idempotent() {
     );
 }
 
-/// Test 8 — `endgame.js:startRun()` dormancy (PHASE2_SKELETON.md §6/§8: `spawn_all` activates everything,
+/// Test 8 — `endgame.js:startRun()` dormancy (docs/history/PHASE2_SKELETON.md §6/§8: `spawn_all` activates everything,
 /// the shell puts the deep `L Y B` creatures back to sleep) and `endgame.js:onDeeper` (crossing a
 /// lap line logs `lap` and wakes any dormant hunter whose `wakeLap ≤ lap`).
 #[test]

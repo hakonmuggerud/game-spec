@@ -14,4 +14,4 @@ Steps are `;`-separated: `wait N` (game seconds, so it means the same as `wait` 
 `UNDERCROFT_SCRIPT`), `shot <path.png>`, or any JS expression evaluated in the page. The script
 prints each expression's result and, for every shot, the mode, game time and player position.
 The Bevy side of a comparison is the same step list as an `UNDERCROFT_SCRIPT` with `screenshot`
-in place of `shot`; see `PHASE2_LANES.md` §0 for the Xvfb recipe.
+in place of `shot`; see the workspace README for the Xvfb recipe.
