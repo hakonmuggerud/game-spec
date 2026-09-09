@@ -101,6 +101,38 @@ pub struct Dialogue {
     pub offer: Option<String>,
 }
 
+/// `npc.js:talk(id)`'s panel text, without the state change: the NPC's line, then either the contract
+/// offer (`contracts::available`) or the titles of this NPC's active contracts. Pure, so the UI lane can
+/// redraw an already-open dialogue from the same inputs; [`Npcs::talk`] builds its result with it.
+pub fn dialogue(def: &NpcDef, offer: Option<&Offer>, active_titles: &[String]) -> Dialogue {
+    let mut lines = vec![format!("\"{}\"", def.line)];
+    if let Some(o) = offer {
+        lines.push(String::new());
+        lines.push(format!("  \"{}\"", o.text));
+        lines.push(format!("  {}", o.objective));
+        lines.push(format!("  Reward: {}", o.reward_text));
+        lines.push(String::new());
+        lines.push(format!("[1] Accept contract — {}", o.title));
+    } else if !active_titles.is_empty() {
+        lines.push(String::new());
+        lines.push(format!(
+            "  \"Come back when it's done.\" — {}",
+            active_titles.join(", ")
+        ));
+    }
+    Dialogue {
+        title: def.name.clone(),
+        lines,
+        foot: if offer.is_some() {
+            "1 / Enter to accept · Esc to close".to_string()
+        } else {
+            "Esc to close".to_string()
+        },
+        npc: def.id.clone(),
+        offer: offer.map(|o| o.id.clone()),
+    }
+}
+
 /// `npc.js:HUB_FALLBACK` — hub stand spots when the hub map has no building anchors (the v1 17×9 hub).
 const HUB_FALLBACK: [(&str, (i32, i32)); 4] = [
     ("lamplighter", (6, 2)),
@@ -819,34 +851,8 @@ impl Npcs {
         if r.place != Some(Place::Hub) {
             return None;
         }
-        let mut lines = vec![format!("\"{}\"", def.line)];
-        self.pending_offer = None;
-        if let Some(o) = offer {
-            self.pending_offer = Some(o.id.clone());
-            lines.push(String::new());
-            lines.push(format!("  \"{}\"", o.text));
-            lines.push(format!("  {}", o.objective));
-            lines.push(format!("  Reward: {}", o.reward_text));
-            lines.push(String::new());
-            lines.push(format!("[1] Accept contract — {}", o.title));
-        } else if !active_titles.is_empty() {
-            lines.push(String::new());
-            lines.push(format!(
-                "  \"Come back when it's done.\" — {}",
-                active_titles.join(", ")
-            ));
-        }
-        let dlg = Dialogue {
-            title: def.name.clone(),
-            lines,
-            foot: if self.pending_offer.is_some() {
-                "1 / Enter to accept · Esc to close".to_string()
-            } else {
-                "Esc to close".to_string()
-            },
-            npc: def.id.clone(),
-            offer: self.pending_offer.clone(),
-        };
+        let dlg = dialogue(def, offer, active_titles);
+        self.pending_offer = dlg.offer.clone();
         Some((
             dlg,
             vec![SimEvent::NpcTalk { id: def.id.clone() }, SimEvent::UiClick],
@@ -1415,5 +1421,29 @@ mod tests {
         assert!(matches!(&ev[0], SimEvent::NpcRescued { debug: true, .. }));
         n.place_hub(&d, &hub, &save);
         assert_eq!(n.at_hub().len(), 3);
+    }
+
+    /// The pure [`dialogue`] builder produces exactly what [`Npcs::talk`] returns, offer or not, so the UI
+    /// lane can redraw an open dialogue without touching `Npcs`.
+    #[test]
+    fn dialogue_matches_talk() {
+        let d = data();
+        let hub = d.parse_hub().unwrap();
+        let mut save = SaveData::defaults(0.6);
+        save.rescued.set("lamplighter", true);
+        let mut n = Npcs::default();
+        n.place_hub(&d, &hub, &save);
+        let def = &d.npcs.npcs["lamplighter"];
+        let offer = contracts::available(&d, &save, "lamplighter");
+        let pure = dialogue(def, offer.as_ref(), &[]);
+        let (via_talk, _) = n.talk(def, offer.as_ref(), &[]).unwrap();
+        assert_eq!(pure, via_talk);
+        assert_eq!(pure.offer.as_deref(), Some("c_relight"));
+        assert_eq!(pure.foot, "1 / Enter to accept · Esc to close");
+        // with no offer and no active contract the line stands alone
+        let bare = dialogue(def, None, &[]);
+        assert_eq!(bare.lines.len(), 1);
+        assert_eq!(bare.foot, "Esc to close");
+        assert!(bare.offer.is_none());
     }
 }
