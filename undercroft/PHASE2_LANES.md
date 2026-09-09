@@ -6,9 +6,15 @@ in separate git worktrees on disjoint files. HANDOFF.md §6 lists the open items
 
 ## 0. Ground rules (in addition to PHASE2_SKELETON.md §0)
 
+> **Superseded (2026-09-09, Phase 3).** The lane ownership rule ("you own `src/<lane>/` and nothing else")
+> and "never edit `assets/data/*.ron`" were for the five parallel agents and no longer stand: the RON is
+> the source of truth (edit it, keep `cargo test` green, update a fixture in the same commit if a deliberate
+> change breaks it) and any file may be edited by anyone. The resource-ownership conventions further down
+> (lanes read state, `run.rs`/`player.rs` write it, the named exceptions) are still the shape of the code.
+
 - You own `crates/undercroft/src/<lane>/` (the `mod.rs` stub exists; add submodules freely) and
   nothing else in `crates/undercroft/src/`. Do not edit `lib.rs`, `main.rs`, the skeleton files,
-  another lane's directory, `reference/prototype/`, or `assets/data/*.ron`. New assets go under
+  another lane's directory, or `reference/prototype/` (frozen). `assets/data/*.ron` is edited directly now. New assets go under
   `assets/<lane>/` (e.g. `assets/audio/`). Pure helpers may be added to the sim/data crates per
   PHASE2_SKELETON §0; report them.
 - New third-party crates: allowed only if no Bevy feature covers the need. Add them to the root

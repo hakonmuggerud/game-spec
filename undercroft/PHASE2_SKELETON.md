@@ -6,7 +6,16 @@ HANDOFF.md §2, §6 and §8 first; the conventions there apply.
 
 ## 0. Ground rules for every agent on this step
 
-- Work only in the files your stage assigns you. Never edit `reference/prototype/` or `assets/data/*.ron`.
+> **Superseded (2026-09-09, Phase 3).** Two rules below were for the parallel agents of this step and no
+> longer stand: (1) "never edit `assets/data/*.ron`" — the RON is now the source of truth; edit it freely
+> and keep `cargo test` green (the fixtures under `assets/fixtures/` pin the old numbers, so a deliberate
+> tuning change that breaks a fixture test must update the fixture in the same commit); (2) "one author per
+> file / work only in your assigned files" — there are no lanes any more; anyone may edit any file. The
+> rest of this section (Bevy version notes, build commands, doc-comment and sim-first conventions) still
+> applies.
+
+- Work only in the files your stage assigns you. Never edit `reference/prototype/` (it is frozen). `assets/data/*.ron`
+  is edited directly now (see the note above).
 - Bevy is pinned to 0.19.1. Do not guess API names from memory: the source is unpacked at
   `~/.cargo/registry/src/*/bevy_*-0.19*/`; grep it (`bevy_ecs` for messages/observers/states,
   `bevy_asset` for `AssetLoader`/`LoadContext`, `bevy_time` for `TimeUpdateStrategy`). Bevy ≥ 0.17

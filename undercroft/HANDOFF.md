@@ -184,7 +184,9 @@ mean luminance or just look); `trunk build` succeeds and the served page reaches
 
 ## 7. Conventions to keep
 
-- Doc comments on public items cite their origin (JS file:function until §5.3 rewrites them).
+- Doc comments on public items cite their JS origin (`reference/prototype/src/<file>.js:function`) as history.
 - No hidden globals; the sim returns `Vec<SimEvent>`; randomness through `SimRng`.
 - The app crate never uses `std::fs`/`std::thread`/`Instant` outside `cfg(not(wasm32))`.
-- Never hand-edit `assets/data/*.ron` — until §5.2 lands. After it: edit freely, keep tests green.
+- `assets/data/*.ron` is the source (§5.2 landed): edit freely, keep `cargo test` green. The fixtures pin the
+  old numbers, so a deliberate tuning change that breaks a fixture test updates the fixture in the same commit.
+- No lane ownership / one-author-per-file rule any more; that was for the parallel agents of Phase 2.
