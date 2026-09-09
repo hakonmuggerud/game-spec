@@ -8,7 +8,7 @@ in separate git worktrees on disjoint files. HANDOFF.md §6 lists the open items
 
 - You own `crates/undercroft/src/<lane>/` (the `mod.rs` stub exists; add submodules freely) and
   nothing else in `crates/undercroft/src/`. Do not edit `lib.rs`, `main.rs`, the skeleton files,
-  another lane's directory, `prototype/`, or `assets/data/*.ron`. New assets go under
+  another lane's directory, `reference/prototype/`, or `assets/data/*.ron`. New assets go under
   `assets/<lane>/` (e.g. `assets/audio/`). Pure helpers may be added to the sim/data crates per
   PHASE2_SKELETON §0; report them.
 - New third-party crates: allowed only if no Bevy feature covers the need. Add them to the root
@@ -193,6 +193,6 @@ Merge order: world, creatures, hub, ui, audio (world first because the others' s
 mean something with its camera; all five branch from the same commit, so the order is for
 conflict resolution only). Then: a verifier pass (fresh Opus) that runs the full script
 `begin → gotoZone → walk → flash → plant lantern → bank → menus → death` on Xvfb with screenshots at
-each step and compares against the prototype served at `http://100.114.229.118:8765/prototype/`
+each step and compares against the prototype served at `http://100.114.229.118:8765/reference/prototype/`
 in the sandbox container's Firefox for the same script through `window.__game.actions`; then the
 owner's review; then Phase 3 (HANDOFF §7).

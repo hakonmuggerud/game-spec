@@ -1,4 +1,4 @@
-//! Voxel-box models (`prototype/src/models.js`): every `MODELS` factory and every `PROP_BOXES` box list, as
+//! Voxel-box models (`reference/prototype/src/models.js`): every `MODELS` factory and every `PROP_BOXES` box list, as
 //! recorded by `tools/export/export.mjs` walking the built `THREE.Group`s.
 //!
 //! Conventions (`models.js` header): a model's origin is at its feet (y = 0 is the floor) and its front faces

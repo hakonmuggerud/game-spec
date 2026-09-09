@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // export.mjs — dump the prototype's data tables to JSON (out/), the map rows to assets/data/maps/*.txt and the
-// parity fixtures to assets/fixtures/*.json, by importing prototype/src/*.js directly. Nothing is transcribed by
+// parity fixtures to assets/fixtures/*.json, by importing reference/prototype/src/*.js directly. Nothing is transcribed by
 // hand: config.js, maps.js, maps/*.js, contracts.js, npc.js, hub.js, endgame.js and models.js are evaluated as ES
 // modules (the bare 'three' import is redirected to node_modules/three by hooks.mjs; hub/endgame/contracts/npc only
 // need `document` to exist at import time, which a tiny stub provides).
@@ -19,7 +19,7 @@ register('./hooks.mjs', import.meta.url);
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(here, '..', '..');                 // undercroft/
-const PROTO = path.resolve(ROOT, '..', 'prototype', 'src');  // prototype/src (read only)
+const PROTO = path.resolve(ROOT, '..', 'reference', 'prototype', 'src');  // reference/prototype/src (read only)
 const OUT = path.join(here, 'out');
 const DATA = path.join(ROOT, 'assets', 'data');
 const FIX = path.join(ROOT, 'assets', 'fixtures');

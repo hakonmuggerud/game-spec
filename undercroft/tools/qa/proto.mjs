@@ -8,7 +8,7 @@ const browser = await chromium.launch({ executablePath: '/usr/bin/chromium', hea
   args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 page.on('console', m => { if (m.type() === 'error') console.error('page:', m.text()); });
-await page.goto('http://127.0.0.1:8765/prototype/index.html', { waitUntil: 'load' });
+await page.goto('http://127.0.0.1:8765/reference/prototype/index.html', { waitUntil: 'load' });
 await page.waitForFunction(() => window.__game && window.__game.actions, null, { timeout: 30000 });
 await page.mouse.click(10, 10);
 const short = v => { let s; try { s = JSON.stringify(v); } catch { s = String(v); } return s && s.length > 160 ? s.slice(0, 160) + '…' : s; };

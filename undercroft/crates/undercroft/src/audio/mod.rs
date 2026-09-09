@@ -1,4 +1,4 @@
-//! Audio lane: the port of `prototype/src/audio.js`.
+//! Audio lane: the port of `reference/prototype/src/audio.js`.
 //!
 //! The prototype had no sound assets — every noise was a Web Audio graph built at play time. The
 //! port keeps that split:

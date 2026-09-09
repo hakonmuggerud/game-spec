@@ -6,7 +6,7 @@ HANDOFF.md §2, §6 and §8 first; the conventions there apply.
 
 ## 0. Ground rules for every agent on this step
 
-- Work only in the files your stage assigns you. Never edit `prototype/` or `assets/data/*.ron`.
+- Work only in the files your stage assigns you. Never edit `reference/prototype/` or `assets/data/*.ron`.
 - Bevy is pinned to 0.19.1. Do not guess API names from memory: the source is unpacked at
   `~/.cargo/registry/src/*/bevy_*-0.19*/`; grep it (`bevy_ecs` for messages/observers/states,
   `bevy_asset` for `AssetLoader`/`LoadContext`, `bevy_time` for `TimeUpdateStrategy`). Bevy ≥ 0.17

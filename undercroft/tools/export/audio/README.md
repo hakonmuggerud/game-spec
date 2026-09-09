@@ -1,6 +1,6 @@
 # One-shot renderer
 
-`render.mjs` bakes every one-shot in `prototype/src/audio.js`'s `SOUNDS` table (plus the appended
+`render.mjs` bakes every one-shot in `reference/prototype/src/audio.js`'s `SOUNDS` table (plus the appended
 menu cues and the creature roster) into `undercroft/assets/audio/*.wav` and writes
 `undercroft/assets/audio/manifest.ron` beside them.
 

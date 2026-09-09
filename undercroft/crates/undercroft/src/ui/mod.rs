@@ -7,7 +7,7 @@
 //!
 //! Layout of the module:
 //!
-//! | file | `prototype/src` origin |
+//! | file | `reference/prototype/src` origin |
 //! |---|---|
 //! | [`style`] | the stylesheet in `index.html` |
 //! | [`menu`] | `ui.js:makeListMenu` + the main/pause/controls/sound/confirm panels |

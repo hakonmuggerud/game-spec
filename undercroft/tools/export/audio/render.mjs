@@ -1,4 +1,4 @@
-// render.mjs — renders every one-shot in `prototype/src/audio.js`'s SOUNDS table to a mono
+// render.mjs — renders every one-shot in `reference/prototype/src/audio.js`'s SOUNDS table to a mono
 // 16-bit 44.1 kHz WAV under `assets/audio/`, plus `assets/audio/manifest.ron` (name → file,
 // peak, duration, samples).
 //

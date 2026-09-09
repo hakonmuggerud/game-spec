@@ -1,6 +1,6 @@
 # tools/export
 
-`export.mjs` imports the prototype's ES modules straight from `../../../prototype/src` (read-only) and writes:
+`export.mjs` imports the prototype's ES modules straight from `../../../reference/prototype/src` (read-only) and writes:
 
 - `out/*.json` — every data table (`config`, `palettes`, `zones`, `contracts`, `npcs`, `buildings`, `endgame`,
   `models`) with the snake_case keys of the Rust structs in `crates/undercroft-data`;
@@ -8,7 +8,7 @@
 - `../../assets/fixtures/*.json` — the parity fixtures (format: `assets/fixtures/README.md`).
 
 `hooks.mjs` is a `module.register` resolve hook that redirects the bare `three` specifier to the copy installed
-here, so `models.js` loads without touching `prototype/`.
+here, so `models.js` loads without touching `reference/prototype/`.
 
 ```sh
 npm install                # three@0.160.0 (the version the prototype's importmap pins)

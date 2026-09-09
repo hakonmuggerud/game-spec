@@ -1,6 +1,6 @@
 // hooks.mjs — module resolve hook registered by export.mjs (node 22 `module.register`).
 // The prototype's models.js / hunter.js import the bare specifier 'three' (served by an importmap in the browser);
-// here it is redirected to the copy installed in tools/export/node_modules so prototype/ is never touched.
+// here it is redirected to the copy installed in tools/export/node_modules so reference/prototype/ is never touched.
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 

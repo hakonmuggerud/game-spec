@@ -1,11 +1,11 @@
 # The Undercroft — Bevy port
 
-Cargo workspace for the Rust/Bevy port (resuming on a new machine? read [`HANDOFF.md`](HANDOFF.md)) of [`../prototype`](../prototype) (the Three.js prototype
+Cargo workspace for the Rust/Bevy port (resuming on a new machine? read [`HANDOFF.md`](HANDOFF.md)) of [`../reference/prototype`](../reference/prototype) (the Three.js prototype
 stays untouched as the playable reference until this build passes DESIGN.md §5.9 and §13).
 
 | Crate | Depends on | Owns |
 |---|---|---|
-| `crates/undercroft-data` | serde, ron | shared types mirroring `prototype/src/*.js`, RON/text-map loaders, the map parser |
+| `crates/undercroft-data` | serde, ron | shared types mirroring `reference/prototype/src/*.js`, RON/text-map loaders, the map parser |
 | `crates/undercroft-sim` | data | grid, BFS, LOS, collision, map validator, creature FSMs, contracts, economy, save schema |
 | `crates/undercroft` | data, sim, bevy | the app: one Bevy plugin per lane (world, creatures, ui, hub, audio) |
 
@@ -37,7 +37,7 @@ Serve the repo root on the tailnet port and open `/undercroft/dist/`:
 ```sh
 python3 -m http.server 8765 --bind 0.0.0.0 --directory /home/agent/repos/game-spec
 # http://100.87.43.62:8765/undercroft/dist/       (Bevy)
-# http://100.87.43.62:8765/prototype/index.html   (Three.js reference)
+# http://100.87.43.62:8765/reference/prototype/index.html   (Three.js reference)
 ```
 
 `dev` (dynamic linking, file watcher) must never be enabled for the wasm target.

@@ -1,4 +1,4 @@
-//! Engine-neutral game data for The Undercroft: the shared types mirroring `prototype/src/*.js`, the RON and
+//! Engine-neutral game data for The Undercroft: the shared types mirroring `reference/prototype/src/*.js`, the RON and
 //! text-map loaders and the map parser. Depends on serde only; never on Bevy.
 //!
 //! Data flow: `tools/export/export.mjs` evaluates the prototype's ES modules and dumps JSON; the `json2ron`

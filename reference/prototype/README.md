@@ -8,7 +8,7 @@ map lives in [`DESIGN.md`](DESIGN.md). `models.html` is a viewer for the voxel m
 ## Run
 
 ```sh
-python3 -m http.server 8765 --directory prototype   # from the repo root
+python3 -m http.server 8765 --directory reference/prototype   # from the repo root
 # then open http://localhost:8765/index.html
 ```
 

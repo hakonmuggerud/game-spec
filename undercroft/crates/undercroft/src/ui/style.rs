@@ -1,4 +1,4 @@
-//! The prototype's palette and type scale (`prototype/index.html`'s stylesheet). Everything the lane
+//! The prototype's palette and type scale (`reference/prototype/index.html`'s stylesheet). Everything the lane
 //! draws takes its colours and sizes from here, so a tweak lands in one place.
 
 use bevy::prelude::*;

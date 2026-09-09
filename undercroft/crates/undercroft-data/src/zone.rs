@@ -1,4 +1,4 @@
-//! Zone definitions: everything a `prototype/src/maps/<id>.js` file exports (`ID SIZE REGIONS SHORTCUTS ANCHORS
+//! Zone definitions: everything a `reference/prototype/src/maps/<id>.js` file exports (`ID SIZE REGIONS SHORTCUTS ANCHORS
 //! META`) merged with the non-map-shaped `maps.js:TUNING` entry and its `maps.js:PALETTES` palette — i.e. one
 //! `maps.js:ZONES[id]` record minus the rows. The rows live in `assets/data/maps/<id>.txt` and are attached by
 //! `GameData::from_dir` (`ZoneDef::rows`).

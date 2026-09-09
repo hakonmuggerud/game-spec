@@ -1,6 +1,6 @@
 //! `SimEvent` — one variant per name on the prototype's event bus (DESIGN.md §12 "Main events" plus the §5.8
 //! creature events and the UI/menu events `main.js` emits). Payload fields are the ones the JS `emit()` calls
-//! carry (every `events.emit(name, {...})` in `prototype/src/*.js`); `SimEvent::name()` is the JS name, so a
+//! carry (every `events.emit(name, {...})` in `reference/prototype/src/*.js`); `SimEvent::name()` is the JS name, so a
 //! Bevy event log or a test can compare against the prototype's traces.
 //!
 //! Lanes return `Vec<SimEvent>` from every state change; the ECS shell fans them out (audio, UI, save) the way
