@@ -1,11 +1,14 @@
-# One-shot renderer
+# One-shot renderer — historical
 
-`render.mjs` bakes every one-shot in `reference/prototype/src/audio.js`'s `SOUNDS` table (plus the appended
+The committed `undercroft/assets/audio/*.wav` and `manifest.ron` are the source now; this tool is
+kept as the record of how they were made from the prototype and is not part of any build step.
+
+`render.mjs` baked every one-shot in `reference/prototype/src/audio.js`'s `SOUNDS` table (plus the appended
 menu cues and the creature roster) into `undercroft/assets/audio/*.wav` and writes
 `undercroft/assets/audio/manifest.ron` beside them.
 
 ```sh
-cd undercroft/tools/export/audio
+cd reference/tools/export/audio
 npm install          # node-web-audio-api (Rust-backed Web Audio, real OfflineAudioContext)
 node render.mjs
 ```
@@ -28,5 +31,6 @@ chords, which are pure low sines — it saves 1.5 MB and each file's header carr
 Every file is peak-normalised to 1.0 and its original peak recorded in `manifest.ron`, so playback
 restores the prototype's loudness with `volume = peak × master` (`audio.js:out(peak, pan)`).
 
-Re-run it whenever `audio.js`'s `SOUNDS` table changes, and keep `PLAYABLE` in
+To add or change a one-shot today, edit or replace the WAV under `undercroft/assets/audio/`, update
+`manifest.ron` (file, peak, duration, samples) and keep `PLAYABLE` in
 `crates/undercroft/src/audio/oneshots.rs` in step — a unit test asserts the two lists agree.

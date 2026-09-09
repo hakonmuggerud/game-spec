@@ -9,7 +9,7 @@
 // `audio.js` verbatim (only `state.master`/`state.noise`/`state.hasPanner` are re-pointed at the
 // offline context, and `Math.random` is seeded so the render is byte-for-byte reproducible).
 //
-//   cd undercroft/tools/export/audio && npm install && node render.mjs
+//   cd reference/tools/export/audio && npm install && node render.mjs
 //
 // Every file is mono 16-bit, peak-normalised to 1.0 and the original peak is written to the manifest, so the
 // player restores the JS loudness with `volume = peak * master` (`audio.js:out(peak, pan)`).
@@ -22,7 +22,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const OUT = join(HERE, '..', '..', '..', 'assets', 'audio');
+const OUT = join(HERE, '..', '..', '..', '..', 'undercroft', 'assets', 'audio');
 const SR = 44100;
 const SILENCE = 3e-4;   // 3x the 1e-4 floor `env()` ramps down to
 const TAIL = 0.01;      // seconds of silence kept after the last audible sample

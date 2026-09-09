@@ -1,7 +1,7 @@
 //! Every export of `reference/prototype/src/config.js` as typed structs (plus the module-local tuning blocks of
 //! `npc.js` `NPC_CFG`, `contracts.js` `CONTRACT_CFG`, `hub.js` `HUB_CFG` and `endgame.js` `ENDGAME`).
 //! Field names are the snake_case of the JS names; colours are `0xRRGGBB` as `u32`.
-//! Loaded from `assets/data/config.ron` (written by `json2ron` from the exporter's `config.json`).
+//! Loaded from `assets/data/config.ron`, which is the source of truth for these numbers.
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;

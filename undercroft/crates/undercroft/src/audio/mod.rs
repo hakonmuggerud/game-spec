@@ -10,7 +10,7 @@
 //!   pushes [`synth::Params`] into the shared block, and queues the timed one-shots (lamp pops,
 //!   drips, footsteps, plops, scrabbling, Warden treads).
 //! - [`oneshots`] is the `SOUNDS` table. Those are baked to WAV once by
-//!   `tools/export/audio/render.mjs` (the same schedulers, run through an `OfflineAudioContext`)
+//!   `reference/tools/export/audio/render.mjs` (the same schedulers, run through an `OfflineAudioContext`)
 //!   and played back as clips, with `volume = peak × master` restoring the JS loudness.
 //!
 //! Master volume and mute live in `save.audio` exactly as `audio.js` kept them on `ctx.save.audio`

@@ -1,6 +1,6 @@
-//! Readers for the parity fixtures in `assets/fixtures/` (written by `tools/export/export.mjs` from the
-//! prototype; format in `assets/fixtures/README.md`). Test-support code shared by every lane: the grid tests use
-//! the map fixtures, the world lane's validator uses `validate_all.json`.
+//! Readers for the parity fixtures in `assets/fixtures/` (frozen golden output recorded from the Three.js
+//! prototype during the port; format in `assets/fixtures/README.md`). Test-support code shared by every lane:
+//! the grid tests use the map fixtures, the world lane's validator uses `validate_all.json`.
 
 use serde::Deserialize;
 use std::collections::BTreeMap;

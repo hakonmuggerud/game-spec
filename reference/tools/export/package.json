@@ -2,7 +2,7 @@
   "name": "undercroft-export",
   "version": "0.1.0",
   "private": true,
-  "description": "Dumps reference/prototype/src data tables to JSON + parity fixtures for the Rust port (see export.mjs)",
+  "description": "Historical: dumped reference/prototype/src data tables to JSON + parity fixtures during the Rust port (see export.mjs)",
   "type": "module",
   "scripts": {
     "export": "node export.mjs"

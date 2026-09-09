@@ -1,5 +1,5 @@
 //! Voxel-box models (`reference/prototype/src/models.js`): every `MODELS` factory and every `PROP_BOXES` box list, as
-//! recorded by `tools/export/export.mjs` walking the built `THREE.Group`s.
+//! recorded by `reference/tools/export/export.mjs` walking the built `THREE.Group`s. `assets/data/models.ron` is the source now.
 //!
 //! Conventions (`models.js` header): a model's origin is at its feet (y = 0 is the floor) and its front faces
 //! −Z; `BoxDef::y` is the BOTTOM of the box (three's mesh centre minus `h / 2`); positions are local to the

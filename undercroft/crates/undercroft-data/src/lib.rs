@@ -1,9 +1,11 @@
-//! Engine-neutral game data for The Undercroft: the shared types mirroring `reference/prototype/src/*.js`, the RON and
-//! text-map loaders and the map parser. Depends on serde only; never on Bevy.
+//! Engine-neutral game data for The Undercroft: the types every table in `assets/data/*.ron` deserialises
+//! into, the RON and text-map loaders and the map parser. Depends on serde only; never on Bevy.
 //!
-//! Data flow: `tools/export/export.mjs` evaluates the prototype's ES modules and dumps JSON; the `json2ron`
-//! binary deserialises that JSON into these types and writes `assets/data/*.ron`, so the committed RON is
-//! guaranteed to match the Rust types. `GameData::from_dir` loads the RON plus the ASCII maps.
+//! The RON files and the ASCII maps under `assets/data/` are the source of truth for every game number; edit
+//! them directly (each file's first line names the type it must parse as) and keep `cargo test` green. The
+//! `every_ron_file_parses` test reports a bad edit by file and line. `GameData::from_dir` loads the RON plus
+//! the ASCII maps. (The tables were originally extracted from the Three.js prototype, now frozen under
+//! `reference/`; the doc comments still name the JS origin of each item as history.)
 //!
 //! Modules: [`cell`] (cell kinds + legend), [`config`] (`config.js`), [`zone`] (`maps/<id>.js` + `TUNING` +
 //! `PALETTES`), [`tables`] (contracts, NPCs, buildings, endings), [`models`] (voxel boxes), [`map`] (the parser).
@@ -222,7 +224,7 @@ impl GameData {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/data")
     }
 
-    /// The repository's `assets/fixtures` directory (parity fixtures from the exporter).
+    /// The repository's `assets/fixtures` directory (frozen parity fixtures recorded from the prototype).
     pub fn workspace_fixtures_dir() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/fixtures")
     }
@@ -300,6 +302,54 @@ mod tests {
 
     fn data() -> GameData {
         GameData::from_dir(&GameData::workspace_data_dir()).expect("assets/data loads")
+    }
+
+    /// Every RON table parses as its type. Loads the files one by one so a hand-edit that breaks one is
+    /// reported by file name and line (`config.ron: 12:5: missing field ...`) instead of as the first
+    /// failure of `from_dir`, and so all broken files are listed at once.
+    #[test]
+    fn every_ron_file_parses() {
+        let dir = GameData::workspace_data_dir();
+        let mut problems: Vec<String> = Vec::new();
+        let mut check = |what: &str, result: Result<(), DataError>| {
+            if let Err(e) = result {
+                problems.push(format!("{what}: {e}"));
+            }
+        };
+        let file = |stem: &str| dir.join(format!("{stem}.ron"));
+        check("config", load_ron::<Config>(&file("config")).map(|_| ()));
+        check(
+            "palettes",
+            load_ron::<BTreeMap<String, Palette>>(&file("palettes")).map(|_| ()),
+        );
+        check(
+            "zones",
+            load_ron::<Vec<ZoneDef>>(&file("zones")).map(|_| ()),
+        );
+        check(
+            "contracts",
+            load_ron::<ContractTable>(&file("contracts")).map(|_| ()),
+        );
+        check("npcs", load_ron::<NpcTable>(&file("npcs")).map(|_| ()));
+        check(
+            "buildings",
+            load_ron::<BuildingTable>(&file("buildings")).map(|_| ()),
+        );
+        check(
+            "endgame",
+            load_ron::<EndgameData>(&file("endgame")).map(|_| ()),
+        );
+        check(
+            "models",
+            load_ron::<ModelTable>(&file("models")).map(|_| ()),
+        );
+        // the maps and the cross-file checks (row counts, markers) go through the real loader
+        check("full load", GameData::from_dir(&dir).map(|_| ()));
+        assert!(
+            problems.is_empty(),
+            "assets/data has files that do not parse:\n  {}",
+            problems.join("\n  ")
+        );
     }
 
     #[test]

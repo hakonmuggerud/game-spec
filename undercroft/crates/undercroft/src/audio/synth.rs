@@ -17,7 +17,7 @@ use bevy::asset::Asset;
 use bevy::audio::{ChannelCount, Decodable, Sample, SampleRate, Source};
 use bevy::reflect::TypePath;
 
-/// Output sample rate. 44.1 kHz, like the rendered one-shots (`tools/export/audio/render.mjs`).
+/// Output sample rate. 44.1 kHz, like the rendered one-shots (originally rendered by `reference/tools/export/audio/render.mjs`).
 pub const SR: u32 = 44_100;
 
 /// One sample in seconds.

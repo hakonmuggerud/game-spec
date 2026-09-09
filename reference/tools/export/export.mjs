@@ -5,8 +5,8 @@
 // modules (the bare 'three' import is redirected to node_modules/three by hooks.mjs; hub/endgame/contracts/npc only
 // need `document` to exist at import time, which a tiny stub provides).
 //
-//   cd undercroft/tools/export && npm install && node export.mjs
-//   cargo run -p undercroft-data --bin json2ron      # then: JSON → typed structs → assets/data/*.ron
+//   cd reference/tools/export && npm install && node export.mjs
+//   (historical: the json2ron step that turned out/*.json into assets/data/*.ron was deleted when the RON became the source)
 //
 // JSON keys are the snake_case field names of the Rust structs in crates/undercroft-data/src (serde default
 // naming), so json2ron is a plain deserialise + serialise round trip that fails loudly on any drift.
@@ -18,8 +18,8 @@ import fs from 'node:fs';
 register('./hooks.mjs', import.meta.url);
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.resolve(here, '..', '..');                 // undercroft/
-const PROTO = path.resolve(ROOT, '..', 'reference', 'prototype', 'src');  // reference/prototype/src (read only)
+const ROOT = path.resolve(here, '..', '..', '..', 'undercroft');   // undercroft/ (the cargo workspace)
+const PROTO = path.resolve(here, '..', '..', 'prototype', 'src');   // reference/prototype/src (read only)
 const OUT = path.join(here, 'out');
 const DATA = path.join(ROOT, 'assets', 'data');
 const FIX = path.join(ROOT, 'assets', 'fixtures');

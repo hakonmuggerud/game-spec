@@ -2,7 +2,7 @@
 //! two `audio.init` wrappers) and their playback.
 //!
 //! The prototype scheduled each one-shot as a fresh Web Audio graph. Here they are baked once by
-//! `tools/export/audio/render.mjs` — the same schedulers run through an `OfflineAudioContext` —
+//! `reference/tools/export/audio/render.mjs` — the same schedulers run through an `OfflineAudioContext` —
 //! into peak-normalised mono WAVs under `assets/audio/`, described by `assets/audio/manifest.ron`.
 //! Playback restores the prototype's loudness with `volume = peak × master` (`audio.js:out`) and
 //! pans with an equal-power balance in [`Clip`], the small `Decodable` wrapper below, because

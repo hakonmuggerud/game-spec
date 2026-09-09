@@ -1407,7 +1407,7 @@ mod tests {
         }
         assert_eq!(all.hub_v1, fixture_result(&fx["hub"]));
         assert_eq!(all.hub, fixture_result(&fx["hubV2"]));
-        // and the serialised shape round-trips to the same JSON the exporter wrote
+        // and the serialised shape round-trips to the same JSON the fixture holds
         for (id, r) in &all.zones {
             let json = serde_json::to_value(r).expect("serialise");
             assert_eq!(json, fx["zones"][id], "zone {id} json");

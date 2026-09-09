@@ -1,8 +1,6 @@
 /target
 /target-wasm
 /dist
-/tools/export/node_modules
-/tools/export/out
 
 # the native SaveStore default (tests and `cargo run` write it beside the crate)
 undercroft-save.json
