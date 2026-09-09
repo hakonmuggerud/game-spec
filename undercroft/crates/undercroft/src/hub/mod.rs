@@ -51,14 +51,11 @@ pub fn lerp_linear(a: LinearRgba, b: LinearRgba, t: f32) -> LinearRgba {
 /// `three.PointLight.intensity` → Bevy lumens.
 ///
 /// three's forward Lambert uses `intensity / d²` with `decay = 2`; Bevy's clustered PBR wants
-/// luminous power in lumens and divides by `4π` internally, then applies the camera exposure. One
-/// shared factor keeps the *relative* brightness of the flame, the lanterns and the sconces exactly
-/// as the prototype had it; the absolute value is the only free parameter, tuned on the preview
-/// example's default exposure. The world lane owns the real camera, so the reviewer may need to
-/// rescale this single constant once the two land together.
-/// The world camera's `world::palette::EXPOSURE_EV100` is chosen so a three.js candela value goes
-/// straight into `PointLight::intensity` (PHASE2_LANES §1 merge note); the 120 000 the lane was
-/// tuned with belonged to the preview example's default exposure. Must stay 1.0 with that camera.
+/// luminous power in lumens and divides by `4π` internally, then applies the camera exposure. The
+/// world camera's [`crate::world::palette::EXPOSURE_EV100`] is chosen so those two factors cancel
+/// and a three.js candela value goes straight into `PointLight::intensity`, so this factor is 1.0
+/// and must stay 1.0 while that exposure holds. It is kept as a named constant so the convention is
+/// visible at the call sites.
 pub const LUMENS_PER_JS_INTENSITY: f32 = 1.0;
 
 /// Every hub system runs in this set, so one run condition gates them all.
