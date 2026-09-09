@@ -1,0 +1,13 @@
+{
+  "name": "undercroft-audio-export",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Renders the prototype's audio.js SOUNDS table to WAV files with an OfflineAudioContext",
+  "type": "module",
+  "scripts": {
+    "render": "node render.mjs"
+  },
+  "dependencies": {
+    "node-web-audio-api": "^1.0.4"
+  }
+}

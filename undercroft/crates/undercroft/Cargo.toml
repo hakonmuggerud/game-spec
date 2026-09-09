@@ -19,6 +19,8 @@ bevy = { workspace = true }
 # failures as a typed error.
 ron = { workspace = true }
 thiserror = { workspace = true }
+# The audio lane deserialises `assets/audio/manifest.ron` (baked in with `include_str!`).
+serde = { workspace = true }
 
 # `SaveStore` on the web is localStorage, exactly what `save.js` used.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
