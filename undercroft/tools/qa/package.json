@@ -1,0 +1,7 @@
+{
+  "name": "undercroft-qa",
+  "private": true,
+  "type": "module",
+  "description": "Headless Chromium driver for the Three.js prototype (reference screenshots for parity checks)",
+  "dependencies": { "playwright-core": "^1.50.0" }
+}
