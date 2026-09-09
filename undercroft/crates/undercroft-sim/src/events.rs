@@ -91,6 +91,12 @@ pub enum SimEvent {
     ZoneExit {
         zone_id: String,
     },
+    /// `zoneIntro {zoneId, text}` — `world.js`'s `zoneEnter` listener, emitted with the matching
+    /// `toast` when the zone has an `intro` line.
+    ZoneIntro {
+        zone_id: String,
+        text: String,
+    },
     /// `saveReset {}`.
     SaveReset,
     /// `menuOpen {kind}` / `menuClose {kind}` (`board`, `npc`, `building`, `pause`, `main` …).
@@ -446,6 +452,7 @@ impl SimEvent {
             SimEvent::HubEnter => "hubEnter",
             SimEvent::ZoneEnter { .. } => "zoneEnter",
             SimEvent::ZoneExit { .. } => "zoneExit",
+            SimEvent::ZoneIntro { .. } => "zoneIntro",
             SimEvent::SaveReset => "saveReset",
             SimEvent::MenuOpen { .. } => "menuOpen",
             SimEvent::MenuClose { .. } => "menuClose",
@@ -584,6 +591,10 @@ mod tests {
             SimEvent::HubEnter,
             SimEvent::ZoneEnter { zone_id: s() },
             SimEvent::ZoneExit { zone_id: s() },
+            SimEvent::ZoneIntro {
+                zone_id: s(),
+                text: s(),
+            },
             SimEvent::SaveReset,
             SimEvent::MenuOpen { kind: s() },
             SimEvent::MenuClose { kind: s() },

@@ -448,6 +448,20 @@ fn react(ctx: &mut RunCtx, e: &SimEvent, out: &mut Vec<SimEvent>) {
 /// blessing), `endgame.js` (the Source run and its dormant creatures).
 fn on_zone_enter(ctx: &mut RunCtx, zone: &str, out: &mut Vec<SimEvent>) {
     spawn_all(ctx);
+    // `world.js:86` — the zone's opening line, as an event and the toast the UI shows.
+    if let Some(intro) = ctx
+        .game
+        .data()
+        .zone(zone)
+        .map(|d| d.intro.clone())
+        .filter(|i| !i.is_empty())
+    {
+        out.push(SimEvent::ZoneIntro {
+            zone_id: zone.to_string(),
+            text: intro.clone(),
+        });
+        out.push(SimEvent::toast(intro));
+    }
     let evs = {
         let env = contract_env!(ctx, true);
         contracts::on_zone_enter(&env, &mut ctx.save.0, zone)
@@ -1974,6 +1988,24 @@ mod tests {
         // after `setPoints(0)` the tech is untouched and the refusal is a `uiError`.
         assert_eq!(s.light_tech, before.0);
         assert!(log(&app).count("uiError") > 0);
+    }
+
+    /// `world.js:86` — entering a zone with an `intro` line announces it.
+    #[test]
+    fn entering_a_zone_announces_its_intro_line() {
+        let mut app = headless_app();
+        send(&mut app, DebugCommand::GotoZone("undercroft".to_string()));
+        step(&mut app, 0.5);
+        let intro = match log(&app).last("zoneIntro") {
+            Some(undercroft_sim::SimEvent::ZoneIntro { text, .. }) => text.clone(),
+            other => panic!("no zoneIntro: {other:?}"),
+        };
+        assert!(intro.starts_with("Stone steps"), "{intro:?}");
+        assert_eq!(
+            log(&app).last("toast"),
+            Some(&undercroft_sim::SimEvent::toast(intro)),
+            "the intro is toasted right after the event, as `world.js` does"
+        );
     }
 
     /// `main.js`'s `KEYS.minimap` branch: without the Cartographer's Table the toggle only
