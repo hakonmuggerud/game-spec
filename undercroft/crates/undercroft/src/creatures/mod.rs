@@ -27,11 +27,12 @@ use undercroft_sim::creature::{Hunter, ProfileKind};
 use crate::resources::{Game, ZoneRes};
 use model::{fallback_def, spawn_model, ModelEntities};
 
-/// three.js (r155+) light intensity is in candela; Bevy's `PointLight`/`SpotLight` intensity is
-/// luminous power in lumens, `lm = cd · 4π`. A camera `Exposure { ev100: -0.263 }`
-/// (`exp2(-ev100) / 1.2 == 1`) reproduces three's unexposed output — the world lane owns the
-/// camera, so the two lanes must agree on this constant; see the lane report.
-pub const LUMENS_PER_CANDELA: f32 = 4.0 * std::f32::consts::PI;
+/// three.js (r155+) light intensity is in candela; Bevy's is lumens (`lm = cd · 4π`) scaled by the
+/// camera exposure. The world lane's camera uses `world::palette::EXPOSURE_EV100`, chosen so that
+/// the `4π` and the exposure cancel and a JS candela value goes straight into `intensity`
+/// (PHASE2_LANES §1 merge note). Kept as a named factor so the convention is visible at the call
+/// sites; it must stay 1.0 while the camera exposure is that constant.
+pub const LUMENS_PER_CANDELA: f32 = 1.0;
 
 /// The entity mirroring one `Zone.hunters[i]` (`hunter.js`'s `h.group`, named `hunter:<id>`).
 #[derive(Component, Debug)]

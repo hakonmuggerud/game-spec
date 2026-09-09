@@ -28,17 +28,14 @@ use undercroft_data::{BoxDef, ModelDef, PartDef};
 /// each lane keep a private copy of this helper during the parallel step; the reviewer dedupes it
 /// against `world/palette.rs::rgb` on merge.
 pub fn rgb_u32(c: u32) -> Color {
-    Color::srgb_u8(
-        ((c >> 16) & 0xff) as u8,
-        ((c >> 8) & 0xff) as u8,
-        (c & 0xff) as u8,
-    )
+    crate::world::palette::rgb(c)
 }
 
 /// `models.js:emissive(box, color, k)` — three multiplies the emissive colour by
 /// `emissiveIntensity`; Bevy's `StandardMaterial::emissive` is that product, in linear space.
 pub fn emissive_rgba(color: u32, k: f32) -> LinearRgba {
-    rgb_u32(color).to_linear() * k
+    // alpha 0 = exposure weight 0: emissive stays unexposed, as in three (world::palette::emissive)
+    crate::world::palette::emissive(color, k)
 }
 
 /// The "Lambert look" every lane uses (PHASE2_LANES §1): rough, non-reflective, lit.
