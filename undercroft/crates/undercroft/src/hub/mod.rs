@@ -22,11 +22,7 @@ pub mod props;
 /// same helper as `world::palette::rgb`; PHASE2_LANES §1 allows each lane a private copy named
 /// `rgb_u32` during the parallel step, and asks the reviewer to dedupe them on merge.
 pub fn rgb_u32(hex: u32) -> Color {
-    Color::srgb_u8(
-        ((hex >> 16) & 0xff) as u8,
-        ((hex >> 8) & 0xff) as u8,
-        (hex & 0xff) as u8,
-    )
+    crate::world::palette::rgb(hex)
 }
 
 /// The same colour as linear RGB, for `StandardMaterial::emissive`.
@@ -60,7 +56,10 @@ pub fn lerp_linear(a: LinearRgba, b: LinearRgba, t: f32) -> LinearRgba {
 /// as the prototype had it; the absolute value is the only free parameter, tuned on the preview
 /// example's default exposure. The world lane owns the real camera, so the reviewer may need to
 /// rescale this single constant once the two land together.
-pub const LUMENS_PER_JS_INTENSITY: f32 = 120_000.0;
+/// The world camera's `world::palette::EXPOSURE_EV100` is chosen so a three.js candela value goes
+/// straight into `PointLight::intensity` (PHASE2_LANES §1 merge note); the 120 000 the lane was
+/// tuned with belonged to the preview example's default exposure. Must stay 1.0 with that camera.
+pub const LUMENS_PER_JS_INTENSITY: f32 = 1.0;
 
 /// Every hub system runs in this set, so one run condition gates them all.
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
