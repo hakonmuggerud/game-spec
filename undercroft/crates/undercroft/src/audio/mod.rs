@@ -662,7 +662,7 @@ mod settings_tests {
 
         send(&mut app, DebugCommand::Key("KeyM".into()));
         step(&mut app, 0.1);
-        assert_eq!(saved(&app).1, true, "KeyM mutes");
+        assert!(saved(&app).1, "KeyM mutes");
         assert_eq!(
             log(&app).last("toast").cloned(),
             Some(undercroft_sim::SimEvent::toast("Sound off"))

@@ -13,7 +13,8 @@ use bevy::prelude::*;
 use undercroft_data::{Config, ModelTable};
 use undercroft_sim::SimRng;
 
-use super::model::{lambert, rgb_u32};
+use crate::model::box_material;
+use crate::world::palette;
 
 /// One burst: the parent of its particles, holding the fade timer and the materials it fades.
 #[derive(Component, Debug)]
@@ -80,12 +81,12 @@ pub fn fire(
     // --- embers (`models.js:emberBurst`): rise 0.8 u/s with a little drift, fading out ---
     let ember_mat = materials.add(StandardMaterial {
         alpha_mode: AlphaMode::Blend,
-        ..lambert(0x000000, Some(em.color), 1.0)
+        ..box_material(0x000000, Some(em.color), 1.0)
     });
     mats.push((
         ember_mat.clone(),
         Color::BLACK,
-        rgb_u32(em.color).to_linear(),
+        palette::rgb(em.color).to_linear(),
     ));
     let ember_mesh = meshes.add(Cuboid::from_length(EMBER_SIZE));
     for _ in 0..em.n {
@@ -113,13 +114,13 @@ pub fn fire(
         for (i, b) in def.boxes.iter().enumerate() {
             let material = materials.add(StandardMaterial {
                 alpha_mode: AlphaMode::Blend,
-                ..lambert(b.color, b.emissive, b.emissive_k)
+                ..box_material(b.color, b.emissive, b.emissive_k)
             });
             mats.push((
                 material.clone(),
-                rgb_u32(b.color),
+                palette::rgb(b.color),
                 b.emissive
-                    .map_or(LinearRgba::BLACK, |e| rgb_u32(e).to_linear() * b.emissive_k),
+                    .map_or(LinearRgba::BLACK, |e| palette::emissive(e, b.emissive_k)),
             ));
             let a = i as f32 / n * std::f32::consts::TAU + rng.range(0.0, 0.8);
             let s = rng.range(1.6, 3.2);

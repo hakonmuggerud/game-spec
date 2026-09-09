@@ -29,9 +29,10 @@ use bevy::prelude::*;
 use undercroft_sim::creature::{Hunter, ProfileKind};
 
 use super::burst::{self, BurstRng};
-use super::model::{emissive_rgba, rgb_u32, BoxRef, ModelEntities, RIPPLE_COLOR};
 use super::{Creature, HunterEntities, LUMENS_PER_CANDELA};
+use crate::model::{BoxRef, ModelEntities, RIPPLE_COLOR};
 use crate::resources::{Game, ZoneRes};
+use crate::world::palette;
 
 /// The boxes `hunter.js` collects into `userData.eyes` — the Warden's "eyes" are its visor slit.
 const EYE_BOXES: [&str; 3] = ["eyeL", "eyeR", "visor"];
@@ -267,7 +268,7 @@ fn set_visible(visibilities: &mut Query<&mut Visibility>, entity: Entity, on: bo
 /// `material.emissiveIntensity = k` on a box's own material. Written only when it changes, so an
 /// idle creature does not re-upload its materials every frame.
 fn set_emissive(materials: &mut Assets<StandardMaterial>, b: &BoxRef, color: u32, k: f32) {
-    let want = emissive_rgba(color, k);
+    let want = palette::emissive(color, k);
     if materials.get(&b.material).map(|m| m.emissive) == Some(want) {
         return;
     }
@@ -278,7 +279,7 @@ fn set_emissive(materials: &mut Assets<StandardMaterial>, b: &BoxRef, color: u32
 
 /// `material.color.set(...)` — the false light's glass going cold.
 fn set_base_color(materials: &mut Assets<StandardMaterial>, b: &BoxRef, color: u32) {
-    let want = rgb_u32(color);
+    let want = palette::rgb(color);
     if materials.get(&b.material).map(|m| m.base_color) == Some(want) {
         return;
     }

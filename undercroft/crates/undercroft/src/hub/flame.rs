@@ -13,8 +13,9 @@ use undercroft_sim::SimRng;
 use crate::resources::{Game, HubMapRes, HubRes};
 use crate::tick::Clock;
 
-use super::model::{spawn_box, BoxAssets, SpawnedModel};
-use super::{lerp_linear, linear_u32, rgb_u32, scale_rgb, LUMENS_PER_JS_INTENSITY};
+use super::LUMENS_PER_JS_INTENSITY;
+use crate::model::{self, spawn_box, BoxAssets, ModelEntities};
+use crate::world::palette;
 
 /// The flame root (`hub.js` `ctx.hub.flame.group`, three name `flame`).
 #[derive(Component, Debug)]
@@ -61,9 +62,9 @@ impl Default for EmberRng {
 /// the tiers, then `→ 0xfff0c0` up the stack, scaled `0.7 + 0.1 * i`.
 pub fn tongue_emissive(tier: u32, i: usize) -> LinearRgba {
     let t = ((tier as f32 - 1.0) / 3.0).clamp(0.0, 1.0);
-    let c = lerp_linear(linear_u32(0xff6020), linear_u32(0xffd080), t);
-    scale_rgb(
-        lerp_linear(c, linear_u32(0xfff0c0), i as f32 * 0.22),
+    let c = palette::lerp(palette::linear(0xff6020), palette::linear(0xffd080), t);
+    palette::scale(
+        palette::lerp(c, palette::linear(0xfff0c0), i as f32 * 0.22),
         0.7 + 0.1 * i as f32,
     )
 }
@@ -108,25 +109,25 @@ fn spawn_flame(
         return;
     };
     let (x, z) = center(&hm.map, f.cx, f.cz);
-    let built: SpawnedModel = super::model::spawn_model(
+    let built: ModelEntities = model::spawn_model(
         &mut commands,
-        &mut assets,
+        Some(&mut assets),
         &mut meshes,
         &mut mats,
         def,
         Transform::from_xyz(x, 0.0, z),
     );
-    let Some(fire) = built.part("fire") else {
+    let Some(fire) = built.part_entity("fire") else {
         error!("hub: flameBase has no `fire` part");
         return;
     };
     let tongues: Vec<Entity> = (0..4)
-        .filter_map(|i| built.named(&format!("tongue{i}")))
+        .filter_map(|i| built.named_entity(&format!("tongue{i}")))
         .collect();
     commands.entity(built.root).insert(Flame {
         fire,
-        base: built.named("base"),
-        rim: built.named("rim"),
+        base: built.named_entity("base"),
+        rim: built.named_entity("rim"),
         tongues,
         tier: 0,
     });
@@ -135,7 +136,7 @@ fn spawn_flame(
         FlameLight,
         Name::new("hub:flameLight"),
         PointLight {
-            color: rgb_u32(0xffa040),
+            color: palette::rgb(0xffa040),
             intensity: 2.0 * LUMENS_PER_JS_INTENSITY,
             range: 7.0,
             shadow_maps_enabled: false,
@@ -224,8 +225,7 @@ fn update_flame(
             let Some(e) = e else { continue };
             if let Ok(h) = handles.get(e) {
                 if let Some(mut m) = mats.get_mut(&h.0) {
-                    m.emissive =
-                        scale_rgb(linear_u32(color), base_k + per_tier * (tier as f32 - 1.0));
+                    m.emissive = palette::emissive(color, base_k + per_tier * (tier as f32 - 1.0));
                 }
             }
         }

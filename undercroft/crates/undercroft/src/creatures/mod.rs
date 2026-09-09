@@ -8,14 +8,12 @@
 //!
 //! Layout:
 //!
-//! - [`model`] — `models.js:build`: a `ModelDef` becomes a root → parts → boxes entity hierarchy.
 //! - [`sync`] — `hunter.js:syncMesh` plus every per-profile `anim` hook, reading `Hunter::anim`.
 //! - [`burst`] — the Brute's lantern smash: `models.js:emberBurst` / `lanternDebris`.
 //! - this file — the roster: one entity per `Zone.hunters[i]`, spawned and despawned by diffing
 //!   `ZoneRes` every frame (`hunter.js:makeHunter` / `disposeMesh` / `spawnAll`).
 
 pub mod burst;
-pub mod model;
 pub mod sync;
 
 use std::collections::HashMap;
@@ -24,8 +22,9 @@ use bevy::prelude::*;
 use undercroft_data::ModelDef;
 use undercroft_sim::creature::{Hunter, ProfileKind};
 
+use crate::model::{fallback_def, spawn_model_under, ModelEntities};
 use crate::resources::{Game, ZoneRes};
-use model::{fallback_def, spawn_model, ModelEntities};
+use crate::world::palette;
 
 /// three.js (r155+) light intensity is in candela; Bevy's is lumens (`lm = cd · 4π`) scaled by the
 /// camera exposure. The world lane's camera uses `world::palette::EXPOSURE_EV100`, chosen so that
@@ -42,7 +41,7 @@ pub struct Creature {
     /// The profile the model was built for; a record whose profile changed is rebuilt
     /// (`spawnAll`: `if (h.profile !== sp.profile) { disposeMesh(h); h = makeHunter(...) }`).
     pub profile: ProfileKind,
-    /// Parts, named boxes and materials from [`model::spawn_model`].
+    /// Parts, named boxes and materials from [`crate::model::spawn_model_under`].
     pub model: ModelEntities,
     /// The Warden's cone `SpotLight` on `conePivot` (`hunter.js:wardenBuild`).
     pub spot: Option<Entity>,
@@ -183,7 +182,9 @@ fn spawn_creature(
             Visibility::Hidden,
         ))
         .id();
-    let model = spawn_model(commands, meshes, materials, def, root);
+    // `None`: no shared cache, so every creature gets its own materials — `syncMesh` writes each
+    // one's eye emissive per frame (`hunter.js` cloned its cached materials for the same reason).
+    let model = spawn_model_under(commands, None, meshes, materials, def, root);
 
     let mut spot = None;
     let mut point = None;
@@ -198,7 +199,7 @@ fn spawn_creature(
                     .spawn((
                         Name::new("wardenLight"),
                         SpotLight {
-                            color: model::rgb_u32(wd.light.color),
+                            color: palette::rgb(wd.light.color),
                             intensity: 0.0,
                             range: wd.light.dist,
                             outer_angle: wd.light.angle * deg,
@@ -224,7 +225,7 @@ fn spawn_creature(
                     .spawn((
                         Name::new("falseLight"),
                         PointLight {
-                            color: model::rgb_u32(fl.color),
+                            color: palette::rgb(fl.color),
                             intensity: 0.0,
                             range: fl.dist,
                             shadow_maps_enabled: false,
@@ -255,11 +256,8 @@ fn spawn_creature(
 /// `(0, spotY 2.28, 0)` aimed at its target `(0, 1.0, −6)`.
 const WARDEN_CONE_PITCH: f32 = 0.209_29;
 
-/// The lane: the roster diff, the `syncMesh` port and the ember bursts, all at render rate.
-///
-/// The mesh/material collections are guarded: `UndercroftPlugin` is also built without a renderer
-/// in `headless::tests::the_asset_loader_reads_the_data_directory` (`MinimalPlugins` +
-/// `AssetPlugin`), where `Assets<Mesh>` does not exist and fetching it would panic.
+/// The lane: the roster diff, the `syncMesh` port and the ember bursts, all at render rate,
+/// behind the shared [`crate::render_ready`] guard.
 pub fn plugin(app: &mut App) {
     app.init_resource::<HunterEntities>()
         .init_resource::<burst::BurstRng>()
@@ -267,10 +265,7 @@ pub fn plugin(app: &mut App) {
             Update,
             (sync_roster, sync::sync_creatures, burst::update_bursts)
                 .chain()
-                .run_if(
-                    resource_exists::<Assets<Mesh>>
-                        .and_then(resource_exists::<Assets<StandardMaterial>>),
-                ),
+                .run_if(crate::render_ready),
         );
 }
 
@@ -398,7 +393,14 @@ mod tests {
                     move |mut commands: Commands,
                           mut meshes: ResMut<Assets<Mesh>>,
                           mut materials: ResMut<Assets<StandardMaterial>>| {
-                        spawn_model(&mut commands, &mut meshes, &mut materials, &def, root)
+                        spawn_model_under(
+                            &mut commands,
+                            None,
+                            &mut meshes,
+                            &mut materials,
+                            &def,
+                            root,
+                        )
                     },
                 )
                 .expect("one-shot system runs")
@@ -474,7 +476,7 @@ mod tests {
             .resource::<Assets<StandardMaterial>>()
             .get(&eye.material)
             .expect("eye material");
-        assert_eq!(mat.emissive, model::emissive_rgba(0xff3a20, 1.5));
+        assert_eq!(mat.emissive, palette::emissive(0xff3a20, 1.5));
 
         // the Warden brought its cone light
         let warden = world.get::<Creature>(b).expect("warden");

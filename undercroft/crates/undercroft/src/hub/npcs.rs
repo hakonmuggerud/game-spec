@@ -14,7 +14,7 @@ use undercroft_sim::follower::NpcState;
 use crate::resources::{Game, Npcs};
 use crate::tick::Clock;
 
-use super::model::{spawn_box, spawn_model, BoxAssets};
+use crate::model::{self, spawn_model, BoxAssets};
 
 /// One NPC's mesh (`npc.js:ensureMesh` — `models.npc(id)`, or a body/head/hat box fallback).
 #[derive(Component, Debug)]
@@ -95,33 +95,33 @@ fn sync_npcs(
             continue;
         };
         let at = Transform::from_xyz(r.x, r.y, r.z).with_rotation(Quat::from_rotation_y(r.yaw));
-        let built = match data.models.get(&r.id) {
-            Some(model) => spawn_model(
-                &mut commands,
-                &mut assets,
-                &mut meshes,
-                &mut mats,
-                model,
-                at,
-            ),
-            None => {
-                // `models.js` has no factory for this id: the JS box fallback.
+        // `models.js` has no factory for some ids: the JS box fallback, built through the same
+        // path as a recorded model so the lookups below work either way.
+        let fallback: Option<undercroft_data::ModelDef> =
+            data.models.get(&r.id).is_none().then(|| {
                 warn!("hub: models.ron has no npc model {:?}; using boxes", r.id);
-                let root = commands
-                    .spawn((at, Visibility::Inherited, Name::new(r.id.clone())))
-                    .id();
-                let mut out = super::model::SpawnedModel {
-                    root,
+                undercroft_data::ModelDef {
+                    name: r.id.clone(),
+                    height: 1.7,
+                    box_count: 0,
+                    scale: [1.0, 1.0, 1.0],
                     parts: Vec::new(),
-                    boxes: Vec::new(),
-                };
-                for b in fallback_boxes(def) {
-                    let e = spawn_box(&mut commands, &mut assets, &mut meshes, &mut mats, root, &b);
-                    out.boxes.push((b.name.clone().unwrap_or_default(), e));
+                    boxes: fallback_boxes(def),
+                    extras: Vec::new(),
                 }
-                out
-            }
-        };
+            });
+        let model = fallback
+            .as_ref()
+            .or_else(|| data.models.get(&r.id))
+            .expect("either the recorded model or the fallback");
+        let built = spawn_model(
+            &mut commands,
+            Some(&mut assets),
+            &mut meshes,
+            &mut mats,
+            model,
+            at,
+        );
         // The base transform of an animated box comes from the same box list it was built
         // from, so the idle composes onto the pose instead of replacing it.
         let bases: Vec<BoxDef> = match data.models.get(&r.id) {
@@ -132,13 +132,13 @@ fn sync_npcs(
             bases
                 .iter()
                 .find(|b| b.name.as_deref() == Some(name))
-                .map(super::model::box_transform)
+                .map(model::box_transform)
                 .unwrap_or(Transform::IDENTITY)
         };
-        let head = built.named("head");
-        let arm_l = built.named("armL");
-        let arm_r = built.named("armR");
-        let coat = built.named("coat");
+        let head = built.named_entity("head");
+        let arm_l = built.named_entity("armL");
+        let arm_r = built.named_entity("armR");
+        let coat = built.named_entity("coat");
         info!(
             "hub: npc {} at ({:.1}, {:.1}), {:?}",
             r.id, r.x, r.z, r.state

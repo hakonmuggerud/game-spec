@@ -14,39 +14,8 @@ use bevy::prelude::*;
 pub mod buildings;
 pub mod flame;
 pub mod lights;
-pub mod model;
 pub mod npcs;
 pub mod props;
-
-/// `0xRRGGBB` (the colour form of every RON table) as a Bevy colour. The world lane exports the
-/// same helper as `world::palette::rgb`; PHASE2_LANES §1 allows each lane a private copy named
-/// `rgb_u32` during the parallel step, and asks the reviewer to dedupe them on merge.
-pub fn rgb_u32(hex: u32) -> Color {
-    crate::world::palette::rgb(hex)
-}
-
-/// The same colour as linear RGB, for `StandardMaterial::emissive`.
-pub fn linear_u32(hex: u32) -> LinearRgba {
-    LinearRgba::from(rgb_u32(hex))
-}
-
-/// `three.Color.multiplyScalar` — scale the colour, leave the alpha alone (Bevy's componentwise
-/// `Mul<f32>` would scale alpha too, and `emissive` is read as an opaque RGB triple).
-pub fn scale_rgb(c: LinearRgba, k: f32) -> LinearRgba {
-    LinearRgba::new(c.red * k, c.green * k, c.blue * k, 1.0)
-}
-
-/// `three.Color.lerp` — component-wise mix in the (linear) working colour space, which is what
-/// three does with colour management on (`models.js:flameBase setTier`).
-pub fn lerp_linear(a: LinearRgba, b: LinearRgba, t: f32) -> LinearRgba {
-    let t = t.clamp(0.0, 1.0);
-    LinearRgba::new(
-        a.red + (b.red - a.red) * t,
-        a.green + (b.green - a.green) * t,
-        a.blue + (b.blue - a.blue) * t,
-        1.0,
-    )
-}
 
 /// `three.PointLight.intensity` → Bevy lumens.
 ///
@@ -62,20 +31,10 @@ pub const LUMENS_PER_JS_INTENSITY: f32 = 1.0;
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct HubSet;
 
-/// The mesh/material collections exist. `UndercroftPlugin` is added by `headless.rs`'s asset-loader
-/// test under `MinimalPlugins`, which has no renderer and therefore no `Assets<Mesh>`; without this
-/// guard every lane system would fail parameter validation there.
-pub fn render_assets_ready(
-    meshes: Option<Res<Assets<Mesh>>>,
-    mats: Option<Res<Assets<StandardMaterial>>>,
-) -> bool {
-    meshes.is_some() && mats.is_some()
-}
-
 /// Everything the hub lane draws.
 pub fn plugin(app: &mut App) {
-    app.init_resource::<model::BoxAssets>()
-        .configure_sets(Update, HubSet.run_if(render_assets_ready))
+    app.init_resource::<crate::model::BoxAssets>()
+        .configure_sets(Update, HubSet.run_if(crate::render_ready))
         .add_plugins((
             props::plugin,
             buildings::plugin,

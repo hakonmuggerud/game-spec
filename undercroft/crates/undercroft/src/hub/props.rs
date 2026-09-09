@@ -20,7 +20,7 @@ use undercroft_sim::grid::{in_bounds, is_solid};
 
 use crate::resources::{Game, HubMapRes};
 
-use super::model::{spawn_box, BoxAssets};
+use crate::model::{spawn_box, BoxAssets};
 
 /* ============================================================
 The table (`world.js:38 HUB_PROPS_V2`)

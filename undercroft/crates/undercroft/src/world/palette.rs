@@ -31,8 +31,8 @@ use undercroft_data::GameData;
 
 /// `0xRRGGBB` (sRGB, as `THREE.Color.set(hex)` reads it) → a Bevy [`Color`].
 ///
-/// Other lanes may call this, or keep a private identical `rgb_u32` while the lanes run in parallel
-/// (PHASE2_LANES §1).
+/// The one conversion every lane uses; the lanes' private `rgb_u32` copies from the parallel step
+/// (PHASE2_LANES §1) were merged into it.
 pub fn rgb(hex: u32) -> Color {
     Color::srgb_u8(
         ((hex >> 16) & 0xff) as u8,
@@ -44,6 +44,25 @@ pub fn rgb(hex: u32) -> Color {
 /// [`rgb`] in linear space — what a vertex-colour attribute and `StandardMaterial::emissive` want.
 pub fn linear(hex: u32) -> LinearRgba {
     LinearRgba::from(rgb(hex))
+}
+
+/// `three.Color.multiplyScalar` — scale an already-linear colour, leaving its alpha alone. Bevy's
+/// componentwise `Mul<f32>` would scale the alpha too, and in `StandardMaterial::emissive` the
+/// alpha channel is overwritten by `emissive_exposure_weight` anyway.
+pub fn scale(c: LinearRgba, k: f32) -> LinearRgba {
+    LinearRgba::new(c.red * k, c.green * k, c.blue * k, c.alpha)
+}
+
+/// `three.Color.lerp` — component-wise mix in the (linear) working colour space, which is what
+/// three does with colour management on (`models.js:flameBase setTier`).
+pub fn lerp(a: LinearRgba, b: LinearRgba, t: f32) -> LinearRgba {
+    let t = t.clamp(0.0, 1.0);
+    LinearRgba::new(
+        a.red + (b.red - a.red) * t,
+        a.green + (b.green - a.green) * t,
+        a.blue + (b.blue - a.blue) * t,
+        a.alpha,
+    )
 }
 
 /// `emissive(mesh, hex, k)` of `models.js`: the colour times its `emissiveIntensity`, with **alpha 0**
@@ -61,7 +80,8 @@ pub const EXPOSURE_EV100: f32 = -3.914_561;
 /// [`EXPOSURE_EV100`]: `1 / (π · exposure) = 1 / 4π²`.
 pub const AMBIENT_BRIGHTNESS: f32 = 0.025_330_296;
 
-/// The Lambert look every lane uses (PHASE2_LANES §1): rough, no specular, no shadows.
+/// The Lambert look for a plain (vertex-coloured) surface: rough, no specular. The box models go
+/// through [`crate::model::box_material`], which adds the emissive term on the same basis.
 pub fn lambert(base: Color) -> StandardMaterial {
     StandardMaterial {
         base_color: base,

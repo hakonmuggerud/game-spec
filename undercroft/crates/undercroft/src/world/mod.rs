@@ -224,12 +224,12 @@ fn spawn_blocks(
 
 /// The world lane's systems.
 ///
-/// The lane needs a renderer: it spawns cameras, meshes and materials. `UndercroftPlugin` is also
-/// added by `headless.rs`'s asset-loader test on a `MinimalPlugins` app with no renderer, so the
-/// whole lane stands down when [`bevy::render::RenderPlugin`] is absent rather than panicking on a
-/// missing `Assets<Mesh>` / `ClearColor`.
+/// The lane needs a renderer outright — it owns the cameras, `ClearColor` and the offscreen render
+/// target, none of which a run condition can stand in for — so it drops out at build time on an
+/// `App` without one ([`crate::has_renderer`]; `headless.rs`'s asset-loader test builds exactly
+/// such an app).
 pub fn plugin(app: &mut App) {
-    if !app.is_plugin_added::<bevy::render::RenderPlugin>() {
+    if !crate::has_renderer(app) {
         debug!("world: no renderer in this App, the lane stays out");
         return;
     }

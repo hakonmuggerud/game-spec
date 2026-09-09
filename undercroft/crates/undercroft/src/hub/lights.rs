@@ -13,8 +13,9 @@ use undercroft_sim::grid::{center, in_bounds, is_solid};
 use crate::resources::{Game, HubMapRes, HubRes};
 use crate::tick::Clock;
 
-use super::model::{spawn_box, BoxAssets};
-use super::{linear_u32, rgb_u32, scale_rgb, LUMENS_PER_JS_INTENSITY};
+use super::LUMENS_PER_JS_INTENSITY;
+use crate::model::{self, spawn_box, BoxAssets};
+use crate::world::palette;
 
 /* ============================================================
 Tables
@@ -265,7 +266,7 @@ fn spawn_lights(
             .spawn((
                 Name::new("cup"),
                 Mesh3d(assets.mesh(&mut meshes, 0.22, 0.22, 0.22)),
-                MeshMaterial3d(mats.add(super::model::box_material(0x1a1210, Some(0xff7a30), 0.0))),
+                MeshMaterial3d(mats.add(model::box_material(0x1a1210, Some(0xff7a30), 0.0))),
                 Transform::from_xyz(0.0, 1.7, 0.0),
                 ChildOf(root),
             ))
@@ -274,7 +275,7 @@ fn spawn_lights(
             .spawn((
                 Name::new("light"),
                 PointLight {
-                    color: rgb_u32(0xffa040),
+                    color: palette::rgb(0xffa040),
                     intensity: 0.0,
                     range: 7.0,
                     shadow_maps_enabled: false,
@@ -315,11 +316,7 @@ fn spawn_lights(
             let e = spawn_box(&mut commands, &mut assets, &mut meshes, &mut mats, root, &b);
             if b.name.as_deref() == Some("glass") {
                 // Its own material: `world.js:update` flickers the glow per lantern.
-                let h = mats.add(super::model::box_material(
-                    b.color,
-                    b.emissive,
-                    b.emissive_k,
-                ));
+                let h = mats.add(model::box_material(b.color, b.emissive, b.emissive_k));
                 commands.entity(e).insert(MeshMaterial3d(h));
                 glass = Some(e);
             }
@@ -329,7 +326,7 @@ fn spawn_lights(
                 .spawn((
                     Name::new("light"),
                     PointLight {
-                        color: rgb_u32(ll.color),
+                        color: palette::rgb(ll.color),
                         intensity: 0.0,
                         range: ll.dist,
                         shadow_maps_enabled: false,
@@ -382,7 +379,7 @@ fn update_lights(
         }
         if let Ok(h) = handles.get(s.cup) {
             if let Some(mut m) = mats.get_mut(&h.0) {
-                m.emissive = scale_rgb(linear_u32(0xff7a30), sconce_cup_k(s.min_tier, tier));
+                m.emissive = palette::emissive(0xff7a30, sconce_cup_k(s.min_tier, tier));
             }
         }
     }
@@ -399,8 +396,8 @@ fn update_lights(
             if let Ok(h) = handles.get(g) {
                 if let Some(mut m) = mats.get_mut(&h.0) {
                     // `world.js:579` — the merged glow material's colour scales with the flicker.
-                    m.emissive = scale_rgb(
-                        linear_u32(0xffc070),
+                    m.emissive = palette::emissive(
+                        0xffc070,
                         if on { 0.85 * w.lantern_glow * f } else { 0.0 },
                     );
                 }

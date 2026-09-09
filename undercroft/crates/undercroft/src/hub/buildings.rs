@@ -21,8 +21,8 @@ use undercroft_sim::economy;
 use crate::resources::{Game, HubMapRes, HubRes, SaveRes};
 use crate::tick::Clock;
 
-use super::model::{spawn_box, spawn_model, BoxAssets};
-use super::{linear_u32, scale_rgb};
+use crate::model::{self, spawn_box, spawn_model, BoxAssets};
+use crate::world::palette;
 
 /// `hub.js:60 meshes[id].state`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -133,7 +133,7 @@ fn set_mesh(
         return;
     };
     let at = Transform::from_xyz(ax, 0.0, az).with_rotation(Quat::from_rotation_y(b.rot));
-    let built = spawn_model(commands, assets, meshes, mats, def, at);
+    let built = spawn_model(commands, Some(assets), meshes, mats, def, at);
     commands
         .entity(built.root)
         .insert(Name::new(format!("hub:{}:{id}", state_name(state))));
@@ -144,13 +144,13 @@ fn set_mesh(
         // adding, so a ghost is the same silhouette in `HUB_CFG.ghostColor`, unlit and
         // translucent — the "not built yet" reading the wireframe carried.
         let ghost = mats.add(StandardMaterial {
-            base_color: super::rgb_u32(data.buildings.cfg.ghost_color).with_alpha(0.35),
+            base_color: palette::rgb(data.buildings.cfg.ghost_color).with_alpha(0.35),
             alpha_mode: AlphaMode::Blend,
             unlit: true,
             ..default()
         });
-        for (_, e) in &built.boxes {
-            commands.entity(*e).insert(MeshMaterial3d(ghost.clone()));
+        for &e in &built.boxes {
+            commands.entity(e).insert(MeshMaterial3d(ghost.clone()));
         }
         // Unnamed boxes too: re-materialise every mesh child below the root.
         commands
@@ -184,7 +184,7 @@ fn set_mesh(
         // `hub.js:290` builds it `transparent: true, opacity: 0.55`, so the flagstones read
         // through the glow.
         let e = spawn_box(commands, assets, meshes, mats, root, &pad);
-        let mut pad_mat = super::model::box_material(pad.color, pad.emissive, pad.emissive_k);
+        let mut pad_mat = model::box_material(pad.color, pad.emissive, pad.emissive_k);
         pad_mat.base_color = pad_mat.base_color.with_alpha(0.55);
         pad_mat.alpha_mode = AlphaMode::Blend;
         let h = mats.add(pad_mat);
@@ -195,8 +195,8 @@ fn set_mesh(
     if id == "board" && state == BuildState::Built {
         // `hub.js:308` — own paper materials, plus a candle on the cap so the notices read.
         for i in 0..4 {
-            if let Some(e) = built.named(&format!("paper{i}")) {
-                let h = mats.add(super::model::box_material(0xe0d0a0, Some(0xe0d0a0), 0.3));
+            if let Some(e) = built.named_entity(&format!("paper{i}")) {
+                let h = mats.add(model::box_material(0xe0d0a0, Some(0xe0d0a0), 0.3));
                 commands.entity(e).insert(MeshMaterial3d(h));
                 papers.push(e);
             }
@@ -223,14 +223,14 @@ fn set_mesh(
     let mut halo = None;
     if id == "shrine" && state == BuildState::Built {
         for i in 0..6 {
-            if let Some(e) = built.named(&format!("candle{i}")) {
-                let h = mats.add(super::model::box_material(0x000000, Some(0xffc070), 1.0));
+            if let Some(e) = built.named_entity(&format!("candle{i}")) {
+                let h = mats.add(model::box_material(0x000000, Some(0xffc070), 1.0));
                 commands.entity(e).insert(MeshMaterial3d(h));
                 candles.push(e);
             }
         }
-        if let Some(e) = built.named("halo") {
-            let h = mats.add(super::model::box_material(0x000000, Some(0x6060ff), 0.9));
+        if let Some(e) = built.named_entity("halo") {
+            let h = mats.add(model::box_material(0x000000, Some(0x6060ff), 0.9));
             commands.entity(e).insert(MeshMaterial3d(h));
             halo = Some(e);
         }
@@ -243,7 +243,7 @@ fn set_mesh(
         papers,
         candles,
         halo,
-        cart: built.part("cart"),
+        cart: built.part_entity("cart"),
     });
 }
 
@@ -358,8 +358,8 @@ fn sync_board_papers(
         } else {
             (0xe0d0a0, 0.3)
         };
-        m.base_color = super::rgb_u32(color);
-        m.emissive = scale_rgb(linear_u32(color), k);
+        m.base_color = palette::rgb(color);
+        m.emissive = palette::emissive(color, k);
     }
 }
 
@@ -390,14 +390,14 @@ fn update_blessing_glow(
     for &e in &shrine.candles {
         if let Ok(h) = handles.get(e) {
             if let Some(mut m) = mats.get_mut(&h.0) {
-                m.emissive = scale_rgb(linear_u32(0xffc070), f);
+                m.emissive = palette::emissive(0xffc070, f);
             }
         }
     }
     if let Some(e) = shrine.halo {
         if let Ok(h) = handles.get(e) {
             if let Some(mut m) = mats.get_mut(&h.0) {
-                m.emissive = scale_rgb(linear_u32(0x6060ff), if lit { 1.6 * f } else { 0.9 });
+                m.emissive = palette::emissive(0x6060ff, if lit { 1.6 * f } else { 0.9 });
             }
         }
     }
@@ -423,7 +423,7 @@ fn animate_buildings(
         for c in children.iter() {
             if let Ok(h) = handles.get(c) {
                 if let Some(mut m) = mats.get_mut(&h.0) {
-                    m.emissive = scale_rgb(linear_u32(0xffc070), k);
+                    m.emissive = palette::emissive(0xffc070, k);
                 }
             }
         }

@@ -21,6 +21,7 @@ pub mod debug;
 pub mod headless;
 pub mod hub;
 pub mod messages;
+pub mod model;
 pub mod player;
 pub mod resources;
 pub mod run;
@@ -34,6 +35,7 @@ pub use debug::{
     parse_script, DebugCommand, DebugQueue, DebugScript, DebugSet, ScriptStep, TakeScreenshot,
 };
 pub use messages::{emit, EventLog, SimMessage};
+pub use model::ModelEntities;
 pub use resources::{
     Fade, FadeMode, Game, HubMapRes, LampRes, MoveIntent, Npcs, PendingTransition, Player,
     PlayerViewRes, RngRes, SaveRes, SaveStore, SaveStoreRes, Spawns, Zone, ZoneRes,
@@ -42,6 +44,26 @@ pub use state::{GameMode, MenuKind, Mode, PrevMode};
 pub use tick::{Clock, SimSet, TickCount, TICK_DT, TICK_HZ};
 
 use bevy::prelude::*;
+
+/// Run condition: the mesh and material collections exist, so a lane may build geometry.
+///
+/// `UndercroftPlugin` is also added without a renderer — `headless::tests::
+/// the_asset_loader_reads_the_data_directory` builds it on `MinimalPlugins` + `AssetPlugin` — and
+/// there `Assets<Mesh>` does not exist, so a lane system asking for it would fail parameter
+/// validation. Every lane wrote its own version of this during the parallel step; this is the one.
+pub fn render_ready(
+    meshes: Option<Res<Assets<Mesh>>>,
+    mats: Option<Res<Assets<StandardMaterial>>>,
+) -> bool {
+    meshes.is_some() && mats.is_some()
+}
+
+/// The build-time half of [`render_ready`]: this `App` has a renderer at all. A lane that needs
+/// renderer-*owned* resources (`ClearColor`, the window, cameras) cannot be gated by a run
+/// condition — those resources are missing, not empty — so it stands down at `Plugin::build` time.
+pub fn has_renderer(app: &App) -> bool {
+    app.is_plugin_added::<bevy::render::RenderPlugin>()
+}
 
 /// Everything that runs identically in the window, on the web and headless.
 ///
