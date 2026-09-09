@@ -261,8 +261,18 @@ pub struct AudioSettings {
     /// 0 … 1, rounded to 2 decimals like `setVolume`.
     pub vol: f32,
     pub muted: bool,
-    /// Set for one frame after a change, so the toast is emitted once.
-    changed: bool,
+    /// Which setter ran, so [`volume_toast`] can send the message `audio.js` sent — `setVolume`
+    /// toasted `Volume N%`, `setMute` toasted `Sound on` / `Sound off`. Cleared once toasted.
+    changed: Option<Change>,
+}
+
+/// Which of the two `audio.js` setters last ran (see [`AudioSettings::changed`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Change {
+    /// `audio.js:338 setVolume`.
+    Volume,
+    /// `audio.js:346 setMute`.
+    Mute,
 }
 
 impl Default for AudioSettings {
@@ -270,28 +280,24 @@ impl Default for AudioSettings {
         AudioSettings {
             vol: undercroft_sim::save::DEFAULT_AUDIO_VOL,
             muted: false,
-            changed: false,
+            changed: None,
         }
     }
 }
 
 impl AudioSettings {
-    /// `audio.js:setVolume(v)` — clamp, round to 2 decimals, remember to toast.
+    /// `audio.js:338 setVolume(v)` — clamp, round to 2 decimals, toast. The JS toasts on *every*
+    /// call, including one that does not move the level (`]` at 100%), so this does too.
     pub fn set_volume(&mut self, v: f32) -> f32 {
-        let v = (v.clamp(0.0, 1.0) * 100.0).round() / 100.0;
-        if v != self.vol {
-            self.vol = v;
-            self.changed = true;
-        }
+        self.vol = (v.clamp(0.0, 1.0) * 100.0).round() / 100.0;
+        self.changed = Some(Change::Volume);
         self.vol
     }
 
-    /// `audio.js:setMute(m)`.
+    /// `audio.js:346 setMute(m)` — likewise toasts on every call.
     pub fn set_mute(&mut self, m: bool) -> bool {
-        if m != self.muted {
-            self.muted = m;
-            self.changed = true;
-        }
+        self.muted = m;
+        self.changed = Some(Change::Mute);
         self.muted
     }
 
@@ -467,16 +473,16 @@ fn debug_commands(
 /// `audio.js:setVolume` / `setMute` each emitted a toast; a separate system does it because one
 /// system may not both read and write `SimMessage`.
 fn volume_toast(mut settings: ResMut<AudioSettings>, mut out: MessageWriter<SimMessage>) {
-    if !settings.changed {
+    let Some(change) = settings.changed else {
         return;
-    }
-    settings.changed = false;
-    let msg = if settings.muted {
-        "Sound off".to_string()
-    } else if settings.vol == 0.0 {
-        "Volume 0%".to_string()
-    } else {
-        format!("Volume {}%", (settings.vol * 100.0).round() as i32)
+    };
+    settings.changed = None;
+    let msg = match change {
+        // `audio.js:350` — the mute toast says nothing about the level.
+        Change::Mute if settings.muted => "Sound off".to_string(),
+        Change::Mute => "Sound on".to_string(),
+        // `audio.js:342` — `Volume ${Math.round(vol * 100)}%`, muted or not.
+        Change::Volume => format!("Volume {}%", (settings.vol * 100.0).round() as i32),
     };
     out.write(SimMessage(undercroft_sim::SimEvent::Toast { msg }));
 }
@@ -572,6 +578,30 @@ fn start_synth(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `audio.js:338-352` — `setVolume` toasts the level, `setMute` toasts `Sound on` / `Sound off`.
+    /// Un-muting used to report the level instead, which the JS never does.
+    #[test]
+    fn the_toast_matches_the_setter_that_ran() {
+        fn toast(s: &mut AudioSettings) -> String {
+            let change = s.changed.take().expect("a setter ran");
+            match change {
+                Change::Mute if s.muted => "Sound off".to_string(),
+                Change::Mute => "Sound on".to_string(),
+                Change::Volume => format!("Volume {}%", (s.vol * 100.0).round() as i32),
+            }
+        }
+        let mut s = AudioSettings::default();
+        s.set_volume(0.9);
+        assert_eq!(toast(&mut s), "Volume 90%");
+        s.toggle_mute();
+        assert_eq!(toast(&mut s), "Sound off");
+        s.toggle_mute();
+        assert_eq!(toast(&mut s), "Sound on", "not the volume");
+        // the level is still reported while muted, and an unchanged level still toasts
+        s.set_volume(0.9);
+        assert_eq!(toast(&mut s), "Volume 90%");
+    }
 
     #[test]
     fn kinds_match_the_js_table() {
