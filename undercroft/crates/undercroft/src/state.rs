@@ -113,3 +113,20 @@ impl Mode<'_> {
         *self.state.get()
     }
 }
+
+/// Log every applied [`GameMode`] transition (`Loading -> Title`, `Title -> Hub`, …) so a run can
+/// be followed from `cargo run`'s output alone — useful for the `UNDERCROFT_SCRIPT` smoke test and
+/// for debugging in general. Identity transitions (`allow_same_state_transitions`, not used here)
+/// are the only ones this would skip; `init_state`/`insert_state`'s first transition (`None ->
+/// Loading` or `None -> Title`) is included.
+fn log_mode_transitions(mut transitions: MessageReader<StateTransitionEvent<GameMode>>) {
+    for t in transitions.read() {
+        info!("GameMode: {:?} -> {:?}", t.exited, t.entered);
+    }
+}
+
+/// Wires up [`log_mode_transitions`]. Added by `SkeletonPlugin`, so it runs in the real app, on
+/// the web and in headless tests alike.
+pub fn plugin(app: &mut App) {
+    app.add_systems(Update, log_mode_transitions);
+}
