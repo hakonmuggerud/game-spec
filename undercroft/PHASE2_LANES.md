@@ -33,7 +33,7 @@ in separate git worktrees on disjoint files. HANDOFF.md §6 lists the open items
   and breaks the headless tests, which is why the copies exist.
 - Visual check: each lane runs the real app on its own Xvfb display with the debug script and
   reads the PNGs it produces. Display numbers: world `:91`, creatures `:92`, ui `:93`, hub `:94`,
-  audio `:95`. Recipe (from `undercroft/`, `PATH` and the shared `CARGO_TARGET_DIR` exported):
+  audio `:95`. Recipe (from your worktree's `undercroft/`, `PATH` exported):
 
   ```sh
   Xvfb :9N -screen 0 1280x800x24 >/dev/null 2>&1 &   # your lane's N only
