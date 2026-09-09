@@ -3,7 +3,7 @@
 A playable slice of [`../spec.md`](../spec.md): the hub, four handcrafted zones, hunters, NPC rescues,
 contracts, hub construction and three endings, all on one light economy. `index.html` (CSS + overlay DOM +
 importmap) loads plain ES modules from `src/` (Three.js 0.160, no build step). Every number and every
-map lives in [`DESIGN.md`](DESIGN.md). `models.html` is a viewer for the voxel models in `src/models.js`.
+map is described in [`undercroft/DESIGN.md`](../../undercroft/DESIGN.md) (moved out of this directory when the port took over; the RON tables under `undercroft/assets/data/` are the numbers now). `models.html` is a viewer for the voxel models in `src/models.js`.
 
 ## Run
 
