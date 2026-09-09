@@ -141,7 +141,10 @@ fn spawn_flame(
             shadow_maps_enabled: false,
             ..default()
         },
-        Transform::from_xyz(x, 1.2, z),
+        // `hub.js:172` — `light.position.y = 1.2` inside the flame group, which is already at
+        // `(x, 0, z)`; the offset is *local*, so adding `x` / `z` again threw the one light of the
+        // hub centre out past the far wall and left the camp lit only by the hanging lanterns.
+        Transform::from_xyz(0.0, 1.2, 0.0),
         ChildOf(built.root),
     ));
     // `hub.js:178 buildEmbers` — EMBERS.max points, all dead, waiting in the coal bed.

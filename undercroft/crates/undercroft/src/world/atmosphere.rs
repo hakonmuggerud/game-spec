@@ -139,6 +139,12 @@ pub(super) fn update_atmosphere(
     if v_lap > 0.0 {
         a = apply_lap_tint(a, &data.config, v_lap);
     }
+    debug!(
+        "world: atmosphere {want} tier={tier} ambient={:?} fog={:?} density={} lap={v_lap}",
+        a.ambient.to_srgba(),
+        a.fog_color.to_srgba(),
+        a.fog_density
+    );
     // The title screen looks over the hub (`main.js:767`), so the atmosphere applies in every mode.
     clear.0 = a.sky;
     for (mut fog, mut ambient) in &mut cam {
