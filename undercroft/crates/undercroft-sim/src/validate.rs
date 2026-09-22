@@ -1421,7 +1421,7 @@ mod tests {
         let d = data();
         let all = validate_all(&d, None);
         let want = [
-            ("undercroft", 952, 640),
+            ("undercroft", 952, 638),
             ("cistern", 1002, 678),
             ("ossuary", 1082, 638),
             ("source", 1926, 1086),
@@ -1444,7 +1444,7 @@ mod tests {
         let saves: Vec<(&str, i32)> = sc.iter().map(|s| (s.id.as_str(), s.detour)).collect();
         assert_eq!(
             saves,
-            vec![("u_navedoor", 74), ("u_wingstair", 80), ("u_rood", 152)]
+            vec![("u_navedoor", 74), ("u_wingstair", 80), ("u_rood", 154)]
         );
         for s in sc {
             assert_eq!(s.detour, s.saves, "{}: saves is the measured detour", s.id);
@@ -1525,13 +1525,13 @@ mod tests {
         let r = validate_zone(&d, &broken, None);
         assert!(!r.ok);
         let msg = format!(
-            "{}: [v2] shortcut 'u_rood' openFrom 'S' is the NEARER side (45 vs 137 cells from the entry) — bar the near side",
+            "{}: [v2] shortcut 'u_rood' openFrom 'S' is the NEARER side (45 vs 139 cells from the entry) — bar the near side",
             z.name
         );
         assert!(r.errors.contains(&msg), "{:?}", r.errors);
         // the measured door still reports the (swapped) flank distances
         let s = &r.stats.as_ref().expect("stats").shortcuts[2];
-        assert_eq!((s.d_barred, s.d_open, s.detour), (137, 45, 152));
+        assert_eq!((s.d_barred, s.d_open, s.detour), (139, 45, 154));
         // on a non-strict grid the same fault is only a warning
         let lax = validate_zone(&d, &broken, Some(false));
         assert!(lax.ok);

@@ -1016,8 +1016,13 @@ mod tests {
         assert_eq!(l[2].status, ContractStatus::Locked);
         let t = targets(&d, &save, None);
         assert_eq!(t.len(), 1);
-        assert_eq!(t[0].cell, Some([31, 47]));
-        assert_eq!((t[0].x, t[0].z), (Some(31.5), Some(47.5)));
+        // c_relight targets Undercroft spot 1 (the great hall); read the cell off the zone def
+        let spot = d.zone("undercroft").expect("undercroft").spots[1].cell;
+        assert_eq!(t[0].cell, Some(spot));
+        assert_eq!(
+            (t[0].x, t[0].z),
+            (Some(spot[0] as f32 + 0.5), Some(spot[1] as f32 + 0.5))
+        );
         assert!(targets(&d, &save, Some("cistern")).is_empty());
     }
 

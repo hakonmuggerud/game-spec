@@ -24,7 +24,7 @@
     "o": 10,
     "r": 8,
     "R": 3,
-    "D": 672,
+    "D": 673,
     "P": 89,
     "F": 0,
     "=": 4,
@@ -32,9 +32,9 @@
     "G": 1,
     "Y": 0,
     "B": 1,
-    "walkable": 2401,
-    "walls": 1354,
-    "wallShare": 0.352,
+    "walkable": 2394,
+    "walls": 1361,
+    "wallShare": 0.354,
     "reachable": 3844,
     "gatedCells": 134,
     "shortcutOnlyCells": 0,
@@ -88,15 +88,15 @@
        ]
       ],
       "openFrom": "N",
-      "saves": 152,
-      "detour": 152,
+      "saves": 154,
+      "detour": 154,
       "dBarred": 45,
-      "dOpen": 137
+      "dOpen": 139
      }
     ],
     "route": {
      "closed": 952,
-     "open": 640
+     "open": 638
     }
    }
   },

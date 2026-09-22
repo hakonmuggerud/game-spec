@@ -53,7 +53,7 @@
       ),
       (
         id: 1,
-        cell: (31, 47),
+        cell: (25, 44),
         label: "the great hall",
       ),
     ],
@@ -254,7 +254,7 @@
         open_from: N,
         from: "u_nave",
         to: "u_baye",
-        saves: 152,
+        saves: 154,
       ),
     ],
     anchors: {
@@ -289,7 +289,7 @@
       }),
       "spine": Cell((7, 50)),
       "spot0": Cell((48, 10)),
-      "spot1": Cell((31, 47)),
+      "spot1": Cell((25, 44)),
       "warden": Cell((42, 10)),
       "wardenAside": Cell((48, 8)),
       "wardenDark": Cell((46, 10)),
