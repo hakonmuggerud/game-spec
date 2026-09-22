@@ -1255,7 +1255,7 @@ re-authored bigger) and numeric `gatesOpened` entries are dropped (they were 40�
 
 ## 12. Crates, plugins and events
 
-Three crates, "functional core, ECS shell": the sim exposes plain structs and pure functions, Bevy owns entities,
+Three crates (plus the editor tool), "functional core, ECS shell": the sim exposes plain structs and pure functions, Bevy owns entities,
 time and I/O and calls into the sim from `FixedUpdate`. Nothing is mirrored between two worlds. All third-party
 crates are declared once in the root `Cargo.toml`.
 
@@ -1264,6 +1264,7 @@ crates are declared once in the root `Cargo.toml`.
 | `crates/undercroft-data` | serde, ron | the types every `assets/data/*.ron` table deserialises into (`Config`, `ZoneDef`, `Palette`, `ContractTable`, `NpcTable`, `BuildingTable`, `EndgameData`, `ModelTable`), `GameData::from_dir` / `from_reader`, the cell legend, `parse_map` / `parse_zone` / `parse_hub` |
 | `crates/undercroft-sim` | data | `grid` (`idx`, `is_solid`, `los`, `bfs_field`, `path_to`, `route_cells`, `lap_of`), `collision` (`move_with_collision`, `BlockMask`), `pool`, `world` (gates, shortcuts), `validate`, `creature` (the profile table and every FSM, §5.8), `follower` (captives, the follower, hub residents, dialogue), `contracts`, `economy` (light economy, tiers, buildings, services, blessing, the Source run, altar, endings), `save` (`SaveData` and its JSON), `events` (`SimEvent`), `rng` (`SimRng`), `fixtures` (readers for the frozen parity fixtures) |
 | `crates/undercroft` | data, sim, bevy | the app |
+| `crates/undercroft-editor` | data, sim, tiny_http | the map editor (native only, never in the wasm build): `server` (`GET /api/zones`, `POST /api/preview`, `POST /api/save`), `doc` (`ZoneDoc` ⇄ `ZoneDef`, anchors rebuilt from flattened paths), `ron_io` (header-preserving `zones.ron` / `npcs.ron` writer), `fixtures` (regenerates the four zone fixtures + `validate_all.json`, byte-identical on unchanged data), `save`; `web/index.html` is the page |
 
 The app crate's skeleton files and the five lanes:
 

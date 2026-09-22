@@ -1,0 +1,15 @@
+[package]
+name = "undercroft-editor"
+description = "The map editor: a local web UI that edits assets/data/maps/*.txt, syncs zones.ron and regenerates the fixtures"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+undercroft-data = { workspace = true }
+undercroft-sim = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+ron = { workspace = true }
+tiny_http = { workspace = true }

@@ -1,0 +1,800 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Undercroft map editor</title>
+<style>
+  :root {
+    --bg: #15161a; --bg2: #1d1f25; --bg3: #262930; --line: #33363f;
+    --fg: #d8dae0; --dim: #8a8e99; --acc: #6ea8ff; --err: #ff5c5c; --warn: #f0b040; --ok: #6fd48a;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--fg);
+    font: 13px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: grid; grid-template-rows: auto 1fr; grid-template-columns: 1fr 300px;
+    grid-template-areas: "top top" "mid side"; overflow: hidden;
+  }
+  #top {
+    grid-area: top; display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+    padding: 6px 10px; background: var(--bg2); border-bottom: 1px solid var(--line);
+  }
+  #top .sep { width: 1px; height: 22px; background: var(--line); margin: 0 4px; }
+  button, select, input[type=text] {
+    background: var(--bg3); color: var(--fg); border: 1px solid var(--line); border-radius: 4px;
+    padding: 4px 9px; font: inherit; cursor: pointer;
+  }
+  button:hover { border-color: var(--dim); }
+  button:disabled { opacity: .45; cursor: default; }
+  button.on { background: #2f4a75; border-color: var(--acc); color: #fff; }
+  button.tab { padding: 4px 12px; }
+  button.tab.dirty::after { content: " •"; color: var(--warn); font-weight: bold; }
+  button#save { background: #2a5a38; border-color: #3f8a55; }
+  button#save.dirty { background: #3a7a48; border-color: var(--ok); color: #fff; }
+  #zoomv { min-width: 3.2em; text-align: right; color: var(--dim); font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 110px; vertical-align: middle; }
+  label.chk { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; user-select: none; }
+  #status { margin-left: auto; flex: 1 1 140px; min-width: 0; text-align: right; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #status.err { color: var(--err); }
+  #status.ok { color: var(--ok); }
+  #scroll { grid-area: mid; overflow: auto; position: relative; background: #0f1013; }
+  #sheet { display: grid; grid-template-columns: 26px auto; grid-template-rows: 26px auto; width: max-content; padding: 0 24px 24px 0; }
+  #corner { position: sticky; top: 0; left: 0; z-index: 3; background: var(--bg2); border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  #rulerX { position: sticky; top: 0; z-index: 2; display: block; }
+  #rulerZ { position: sticky; left: 0; z-index: 2; display: block; }
+  #grid { display: block; cursor: crosshair; image-rendering: pixelated; }
+  #grid.move { cursor: grab; }
+  #grid.dragging { cursor: grabbing; }
+  #side {
+    grid-area: side; overflow: auto; background: var(--bg2); border-left: 1px solid var(--line);
+    padding: 8px 10px; display: flex; flex-direction: column; gap: 10px;
+  }
+  #side h3 { margin: 0 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--dim); }
+  #legend { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 6px; }
+  .lg { display: flex; align-items: center; gap: 6px; padding: 2px 4px; border-radius: 3px; cursor: pointer; border: 1px solid transparent; }
+  .lg:hover { background: var(--bg3); }
+  .lg.on { border-color: var(--acc); background: #2f4a75; }
+  .sw { width: 18px; height: 18px; border-radius: 2px; display: grid; place-items: center; font: bold 12px/1 ui-monospace, Menlo, Consolas, monospace; flex: none; }
+  .lg span.n { font-size: 12px; }
+  #hover { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; white-space: pre-wrap; min-height: 4.2em; color: var(--fg); }
+  #hover .k { color: var(--dim); }
+  ul.msgs { margin: 0; padding-left: 16px; }
+  ul.msgs li { margin: 2px 0; font-size: 12px; word-break: break-word; }
+  ul.msgs.err li { color: var(--err); }
+  ul.msgs.warn li { color: var(--warn); }
+  #parse { color: var(--err); font-weight: 600; white-space: pre-wrap; }
+  #stats { font-size: 12px; color: var(--fg); font-variant-numeric: tabular-nums; white-space: pre-wrap; }
+  #stats b { color: var(--dim); font-weight: normal; }
+  #vstate { font-size: 12px; }
+  #vstate.ok { color: var(--ok); } #vstate.bad { color: var(--err); } #vstate.warn { color: var(--warn); } #vstate.pend { color: var(--dim); }
+  #written { font-size: 12px; color: var(--ok); white-space: pre-wrap; font-family: ui-monospace, Menlo, Consolas, monospace; }
+  #zinfo { font-size: 12px; color: var(--dim); }
+  kbd { background: var(--bg3); border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; font: 11px ui-monospace, Menlo, monospace; }
+  .help { font-size: 11px; color: var(--dim); }
+</style>
+</head>
+<body>
+<div id="top">
+  <span id="tabs"></span>
+  <span class="sep"></span>
+  <button id="t-move" title="Move (M): drag an entity or door char, or an anchor marker">Move</button>
+  <button id="t-paint" title="Paint (P): click/drag with the chosen legend char">Paint <span id="paintch" class="sw" style="display:inline-grid;width:16px;height:16px;font-size:11px">#</span></button>
+  <button id="t-erase" title="Erase (E): set cells to plain floor '.'">Erase</button>
+  <span class="sep"></span>
+  <button id="undo" title="Undo (Ctrl+Z)">Undo</button>
+  <button id="redo" title="Redo (Ctrl+Shift+Z)">Redo</button>
+  <span class="sep"></span>
+  <label class="chk" title="Zoom (+/-)">Zoom <input id="zoom" type="range" min="6" max="24" step="1" value="12"><span id="zoomv">12px</span></label>
+  <span class="sep"></span>
+  <label class="chk"><input id="ov-regions" type="checkbox" checked> Regions</label>
+  <label class="chk"><input id="ov-anchors" type="checkbox" checked> Anchors</label>
+  <span class="sep"></span>
+  <button id="save" title="Save (Ctrl+S): writes maps/<id>.txt, zones.ron, npcs.ron and the fixtures">Save</button>
+  <span id="status">loading…</span>
+</div>
+<div id="scroll">
+  <div id="sheet">
+    <div id="corner"></div>
+    <canvas id="rulerX" width="10" height="26"></canvas>
+    <canvas id="rulerZ" width="26" height="10"></canvas>
+    <canvas id="grid" width="10" height="10"></canvas>
+  </div>
+</div>
+<div id="side">
+  <div>
+    <h3>Zone</h3>
+    <div id="zinfo"></div>
+  </div>
+  <div>
+    <h3>Legend / palette <span class="help">(click = paint with it)</span></h3>
+    <div id="legend"></div>
+  </div>
+  <div>
+    <h3>Cell</h3>
+    <div id="hover"><span class="k">hover the grid</span></div>
+  </div>
+  <div>
+    <h3>Validation <span id="vstate" class="pend"></span></h3>
+    <div id="parse"></div>
+    <ul id="errors" class="msgs err"></ul>
+    <ul id="warnings" class="msgs warn"></ul>
+  </div>
+  <div>
+    <h3>Stats</h3>
+    <div id="stats"></div>
+  </div>
+  <div id="written-box" hidden>
+    <h3>Last save wrote</h3>
+    <div id="written"></div>
+  </div>
+  <div class="help">
+    <kbd>M</kbd> move · <kbd>P</kbd> paint · <kbd>E</kbd> erase · <kbd>+</kbd>/<kbd>-</kbd> zoom ·
+    <kbd>Ctrl+Z</kbd> undo · <kbd>Ctrl+Shift+Z</kbd> redo · <kbd>Ctrl+S</kbd> save.
+    Move: the char moves; the vacated cell becomes D / W / . (# for a door) and every reference to it (anchors, npcs, gate, spots, shortcuts) follows.
+    A char drops only onto floor (w also onto water, doors also onto wall); a red ghost means the drop is refused.
+    Drag an anchor's small marker (top-right corner) to move only the anchor; hold <kbd>Shift</kbd> when the cell also holds a char.
+  </div>
+</div>
+
+<script>
+'use strict';
+// ---------------------------------------------------------------------------------------------
+// Undercroft map editor — one page, vanilla JS + <canvas>. Talks to the undercroft-editor server:
+//   GET  /api/zones          -> { zones: [ZoneInfo] }
+//   POST /api/preview {doc}  -> { parse_error, kinds, validation }
+//   POST /api/save    {doc}  -> preview result & { saved, written, reason }
+// The client holds one ZoneDoc per zone (rows, anchors, npcs, gate, spots, shortcuts, regions) and
+// sends it back verbatim; `kinds` (CellKind per cell) comes from the server after every change.
+// ---------------------------------------------------------------------------------------------
+
+const KIND = { floor: 0, wall: 1, pillar: 2, deep: 3, stairs: 4, water: 5, gate: 6, elevator: 7, altar: 8, shortcut: 9 };
+const KIND_NAME = ['floor', 'wall', 'pillar', 'deep', 'stairs', 'water', 'gate', 'elevator', 'altar', 'shortcut'];
+
+// Legend: char -> { name, kind (terrain kind the char itself implies, or null for entities that stand on
+// floor), glyph colour, fill colour override }.
+const LEGEND = [
+  ['#', 'wall', 'wall'], ['P', 'pillar', 'pillar'], ['.', 'floor', 'floor'], ['D', 'deep floor', 'deep'],
+  ['W', 'water', 'water'], ['w', 'water + Drowner', 'water', '#ff7af0'],
+  ['X', 'gate (needs tool)', 'gate'], ['=', 'shortcut door', 'shortcut'],
+  ['S', 'stairs (spawn)', 'stairs'], ['V', 'elevator (spawn)', 'elevator'], ['A', 'Source altar', 'altar'],
+  ['o', 'oil flask', null, '#7ee08a'], ['r', 'relic', null, '#f0c040'], ['R', 'rich relic (deep)', 'deep', '#ffd45c'],
+  ['H', 'hunter spawn', null, '#ff4a4a'], ['L', 'Lampwight', null, '#ff5ce0'], ['G', 'Warden', null, '#e040c0'],
+  ['Y', 'false light', null, '#ffa3ee'], ['B', 'Brute', null, '#c83aa8'],
+  ['N', 'captive NPC', null, '#40e0ff'], ['C', 'contract spot', null, '#ffffff'],
+];
+const LEG = {}; for (const [c, name, kind, glyph] of LEGEND) LEG[c] = { name, kind, glyph: glyph || null };
+const ENTITY_CHARS = 'orRHLGYBNCw';           // stand on floor / water; drawn as glyphs
+const MOVABLE = 'orRHLGYBNCwXS=VA';           // what the Move tool picks up
+const DOOR_CHARS = 'X=';                      // may be dropped onto a wall (they live in wall lines)
+const TERRAIN_FILL = { gate: '#d97a1e', shortcut: '#e0c231', stairs: '#3d6fd8', elevator: '#3d6fd8', altar: '#9a52d8' };
+
+// ---- state -----------------------------------------------------------------------------------
+const S = {
+  zones: [],          // ZoneInfo[] from the server, each extended with editor state (see loadZones)
+  cur: 0,
+  tool: 'move',       // move | paint | erase
+  paintChar: '#',
+  zoom: 12,
+  showRegions: true,
+  showAnchors: true,
+  hover: null,        // [x, z] or null
+  drag: null,         // { kind: 'char'|'anchor'|'paint', ... }
+  previewSeq: 0,
+  previewTimer: null,
+};
+const $ = id => document.getElementById(id);
+const grid = $('grid'), gctx = grid.getContext('2d');
+const rulerX = $('rulerX'), rulerZ = $('rulerZ');
+const RULER = 26;
+
+function Z() { return S.zones[S.cur]; }
+function docJSON(doc) { return JSON.stringify(doc); }
+function clone(v) { return JSON.parse(JSON.stringify(v)); }
+function cellEq(a, b) { return a && b && a[0] === b[0] && a[1] === b[1]; }
+function setStatus(msg, cls) { const s = $('status'); s.textContent = msg; s.className = cls || ''; }
+
+// ---- colours ---------------------------------------------------------------------------------
+function rgb(int) { return [(int >> 16) & 255, (int >> 8) & 255, int & 255]; }
+function mix(a, b, t) { return a.map((v, i) => Math.round(v + (b[i] - v) * t)); }
+function css(c) { return `rgb(${c[0]},${c[1]},${c[2]})`; }
+// The zone palette is tuned for a fogged 3D scene and is very dark; the editor lifts it so the
+// tiers read on a monitor while keeping each zone's tint: floor mid, deep clearly darker, walls
+// darkest (solid = void), pillars a lighter block inset in a wall cell.
+function zoneColours(p) {
+  const W = [255, 255, 255], K = [0, 0, 0];
+  const floor = mix(rgb(p.floor), W, 0.10);
+  return {
+    floor: css(floor),
+    deep: css(mix(floor, rgb(p.deep), 0.5)),
+    wall: css(mix(rgb(p.wall), K, 0.74)),
+    wallEdge: css(mix(rgb(p.wall), K, 0.45)),
+    pillar: css(mix(rgb(p.pillar), K, 0.25)),
+    water: css(mix(rgb(p.water), [40, 120, 220], 0.35)),
+    ceil: css(rgb(p.ceil)),
+  };
+}
+
+// ---- data load -------------------------------------------------------------------------------
+async function api(path, body) {
+  const r = await fetch(path, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : undefined);
+  let j; try { j = await r.json(); } catch { throw new Error(`${path}: HTTP ${r.status} (not JSON)`); }
+  if (!r.ok) throw new Error(j && j.error ? j.error : `${path}: HTTP ${r.status}`);
+  return j;
+}
+
+async function loadZones() {
+  setStatus('loading zones…');
+  const j = await api('/api/zones');
+  S.zones = j.zones.map(z => Object.assign(z, {
+    parse_error: null,
+    savedJSON: docJSON(z.doc),
+    stale: false,       // the zone changed on disk since it was loaded (base fingerprint mismatch)
+    undo: [], redo: [],
+    colours: zoneColours(z.palette),
+    written: null,
+  }));
+  S.cur = 0;
+  buildTabs(); buildLegend();
+  selectZone(0, true);
+  setStatus(`${S.zones.length} zones loaded`, 'ok');
+}
+
+function isDirty(z) { return docJSON(z.doc) !== z.savedJSON; }
+
+// ---- top bar ---------------------------------------------------------------------------------
+function buildTabs() {
+  const t = $('tabs'); t.innerHTML = '';
+  S.zones.forEach((z, i) => {
+    const b = document.createElement('button');
+    b.className = 'tab'; b.textContent = z.name; b.dataset.i = i; b.title = `${z.doc.id} · ${z.size}×${z.size}`;
+    b.onclick = () => selectZone(i);
+    t.appendChild(b);
+  });
+  refreshTabs();
+}
+function refreshTabs() {
+  [...$('tabs').children].forEach((b, i) => {
+    const z = S.zones[i];
+    b.classList.toggle('on', i === S.cur);
+    b.classList.toggle('dirty', isDirty(z));
+  });
+  const z = Z();
+  $('save').classList.toggle('dirty', z && isDirty(z));
+  $('undo').disabled = !z || z.undo.length === 0;
+  $('redo').disabled = !z || z.redo.length === 0;
+  const dirtyAny = S.zones.some(isDirty);
+  document.title = (dirtyAny ? '• ' : '') + 'Undercroft map editor';
+}
+
+function selectZone(i, force) {
+  if (!force && i === S.cur) return;
+  const from = Z();
+  if (!force && from && isDirty(from)) {
+    if (!confirm(`${from.name} has unsaved changes. Switch to ${S.zones[i].name} anyway?\n(The changes are kept until you close the page.)`)) return;
+  }
+  S.cur = i; S.hover = null; S.drag = null;
+  refreshTabs(); layout(); render(); renderSide();
+}
+
+function setTool(t) {
+  S.tool = t;
+  for (const k of ['move', 'paint', 'erase']) $('t-' + k).classList.toggle('on', k === t);
+  grid.classList.toggle('move', t === 'move');
+  [...document.querySelectorAll('.lg')].forEach(e => e.classList.toggle('on', t === 'paint' && e.dataset.c === S.paintChar));
+}
+function setPaint(c) {
+  S.paintChar = c;
+  const sw = $('paintch'); sw.textContent = c; styleSwatch(sw, c);
+  setTool('paint');
+}
+function setZoom(v) {
+  S.zoom = Math.max(6, Math.min(24, v | 0));
+  $('zoom').value = S.zoom; $('zoomv').textContent = S.zoom + 'px';
+  layout(); render();
+}
+
+// ---- legend panel ----------------------------------------------------------------------------
+function styleSwatch(el, c) {
+  const z = Z(); const L = LEG[c];
+  const col = z ? z.colours : zoneColours({ floor: 0x6e675e, wall: 0x5c574d, pillar: 0x7d7660, deep: 0x0c0c18, water: 0x2a3036, ceil: 0 });
+  const fill = L.kind ? (TERRAIN_FILL[L.kind] || col[L.kind]) : col.floor;
+  el.style.background = fill; el.style.color = L.glyph || '#111';
+  if (L.kind === 'wall' || L.kind === 'deep' || L.kind === 'water') el.style.color = L.glyph || '#bbb';
+  el.textContent = c;
+}
+function buildLegend() {
+  const g = $('legend'); g.innerHTML = '';
+  for (const [c, name] of LEGEND) {
+    const d = document.createElement('div'); d.className = 'lg'; d.dataset.c = c;
+    const sw = document.createElement('span'); sw.className = 'sw'; styleSwatch(sw, c);
+    const n = document.createElement('span'); n.className = 'n'; n.textContent = name;
+    d.append(sw, n); d.onclick = () => setPaint(c);
+    g.appendChild(d);
+  }
+  styleSwatch($('paintch'), S.paintChar);
+  setTool(S.tool);
+}
+
+// ---- rendering -------------------------------------------------------------------------------
+function layout() {
+  const z = Z(); if (!z) return;
+  const n = z.size, px = n * S.zoom;
+  grid.width = px; grid.height = px;
+  rulerX.width = px; rulerX.height = RULER;
+  rulerZ.width = RULER; rulerZ.height = px;
+  drawRulers();
+}
+
+function drawRulers() {
+  const z = Z(); const n = z.size, s = S.zoom;
+  const step = s >= 14 ? 1 : s >= 9 ? 2 : 5;
+  for (const [cv, horiz] of [[rulerX, true], [rulerZ, false]]) {
+    const c = cv.getContext('2d');
+    c.fillStyle = '#1d1f25'; c.fillRect(0, 0, cv.width, cv.height);
+    c.strokeStyle = '#33363f'; c.beginPath();
+    if (horiz) { c.moveTo(0, RULER - .5); c.lineTo(cv.width, RULER - .5); } else { c.moveTo(RULER - .5, 0); c.lineTo(RULER - .5, cv.height); }
+    c.stroke();
+    c.fillStyle = '#9da1ab'; c.font = `${Math.max(9, Math.min(11, s - 1))}px ui-monospace, Menlo, Consolas, monospace`;
+    c.textAlign = 'center'; c.textBaseline = 'middle';
+    for (let i = 0; i < n; i++) {
+      const p = i * s + s / 2;
+      const major = i % 10 === 0;
+      c.fillStyle = major ? '#e0e3ea' : '#7c808a';
+      if (horiz) {
+        c.fillRect(i * s, RULER - (major ? 6 : 3), 1, major ? 6 : 3);
+        if (i % step === 0) c.fillText(String(i), p, 10);
+      } else {
+        c.fillRect(RULER - (major ? 6 : 3), i * s, major ? 6 : 3, 1);
+        if (i % step === 0) c.fillText(String(i), 12, p);
+      }
+    }
+  }
+}
+
+function localKind(ch) {
+  // Fallback when the server has not typed the grid yet (or it does not parse): the char's own kind.
+  const L = LEG[ch]; if (!L) return KIND.floor;
+  return L.kind ? KIND[L.kind] : KIND.floor;
+}
+function kindAt(z, x, zz) {
+  const i = zz * z.size + x;
+  if (z.kinds && z.kinds[i] != null) return z.kinds[i];
+  return localKind(z.doc.rows[zz][x]);
+}
+
+function regionAt(z, x, zz) {
+  return z.doc.regions.find(r => x >= r.x[0] && x <= r.x[1] && zz >= r.z[0] && zz <= r.z[1]) || null;
+}
+function anchorsAt(z, x, zz) {
+  const out = []; const c = [x, zz];
+  for (const [k, v] of Object.entries(z.doc.anchors)) if (cellEq(v, c)) out.push(k);
+  return out;
+}
+function refsAt(z, x, zz) {
+  const c = [x, zz], out = [];
+  for (const [k, v] of Object.entries(z.doc.npcs)) if (cellEq(v, c)) out.push(`npc ${k}`);
+  if (z.doc.gate && z.doc.gate.cells.some(v => cellEq(v, c))) out.push(`gate (${z.doc.gate.tool})`);
+  for (const sp of z.doc.spots) if (cellEq(sp.cell, c)) out.push(`spot ${sp.id}: ${sp.label}`);
+  for (const sc of z.doc.shortcuts) if (sc.cells.some(v => cellEq(v, c))) out.push(`shortcut ${sc.id} (${sc.name}, opens from ${sc.open_from})`);
+  return out;
+}
+
+const REGION_HUES = [0, 40, 80, 120, 160, 200, 240, 280, 320, 20, 100, 180, 260, 340, 60, 140, 220, 300];
+
+function render() {
+  const z = Z(); if (!z) return;
+  const n = z.size, s = S.zoom, col = z.colours, rows = z.doc.rows;
+  const c = gctx;
+  c.fillStyle = '#0f1013'; c.fillRect(0, 0, grid.width, grid.height);
+  const glyphFont = `bold ${Math.max(7, Math.round(s * 0.78))}px ui-monospace, Menlo, Consolas, monospace`;
+  c.textAlign = 'center'; c.textBaseline = 'middle';
+  const drag = S.drag;
+  for (let zz = 0; zz < n; zz++) {
+    const row = rows[zz] || '';
+    for (let x = 0; x < n; x++) {
+      let ch = row[x]; if (ch === undefined) ch = '?';
+      const k = kindAt(z, x, zz);
+      const X = x * s, Y = zz * s;
+      // terrain fill
+      let fill;
+      if (ch === '#') fill = col.wall;
+      else if (ch === 'P') fill = col.wall;
+      else if (ch === 'X') fill = TERRAIN_FILL.gate;
+      else if (ch === '=') fill = TERRAIN_FILL.shortcut;
+      else if (ch === 'S') fill = TERRAIN_FILL.stairs;
+      else if (ch === 'V') fill = TERRAIN_FILL.elevator;
+      else if (ch === 'A') fill = TERRAIN_FILL.altar;
+      else if (ch === 'W' || ch === 'w' || k === KIND.water) fill = col.water;
+      else if (ch === 'D' || ch === 'R' || k === KIND.deep) fill = col.deep;
+      else if (!LEG[ch]) fill = '#a01030';
+      else fill = col.floor;
+      c.fillStyle = fill; c.fillRect(X, Y, s, s);
+      if (ch === '#') { c.fillStyle = col.wallEdge; c.fillRect(X, Y, s, 1); c.fillRect(X, Y, 1, s); }
+      else if (ch === 'P') { c.fillStyle = col.pillar; const m = Math.max(1, Math.round(s * 0.12)); c.fillRect(X + m, Y + m, s - 2 * m, s - 2 * m); }
+      else if (s >= 8 && (ch === '.' || ch === 'D' || ch === 'W')) { c.fillStyle = 'rgba(0,0,0,.18)'; c.fillRect(X + s - 1, Y, 1, s); c.fillRect(X, Y + s - 1, s, 1); }
+      // glyphs
+      const L = LEG[ch];
+      const glyph = L ? L.glyph : '#fff';
+      const isEntity = ENTITY_CHARS.includes(ch) || !L;
+      const isTerrainGlyph = 'XS=VA'.includes(ch);
+      if (isEntity || isTerrainGlyph) {
+        const hidden = drag && drag.kind === 'char' && drag.from[0] === x && drag.from[1] === zz;
+        if (!hidden) {
+          if (s >= 9) {
+            c.font = glyphFont;
+            if (isEntity) { c.fillStyle = 'rgba(0,0,0,.45)'; c.fillRect(X + 1, Y + 1, s - 2, s - 2); }
+            c.fillStyle = isTerrainGlyph ? '#111' : glyph;
+            c.fillText(ch, X + s / 2, Y + s / 2 + 1);
+          } else if (isEntity) {
+            c.fillStyle = glyph; c.fillRect(X + 1, Y + 1, s - 2, s - 2);
+          }
+        }
+      }
+    }
+  }
+  // regions
+  if (S.showRegions) {
+    // tint every cell by the region that owns it (first match, like the hover) so nested rectangles do not stack
+    const tint = z.doc.regions.map((r, i) => `hsla(${REGION_HUES[i % REGION_HUES.length]},70%,60%,${r.deep ? 0.09 : 0.05})`);
+    for (let zz = 0; zz < n; zz++) for (let x = 0; x < n; x++) {
+      const ri = z.doc.regions.findIndex(r => x >= r.x[0] && x <= r.x[1] && zz >= r.z[0] && zz <= r.z[1]);
+      if (ri >= 0) { c.fillStyle = tint[ri]; c.fillRect(x * s, zz * s, s, s); }
+    }
+    z.doc.regions.forEach((r, i) => {
+      const h = REGION_HUES[i % REGION_HUES.length];
+      const X = r.x[0] * s, Y = r.z[0] * s, W = (r.x[1] - r.x[0] + 1) * s, H = (r.z[1] - r.z[0] + 1) * s;
+      c.strokeStyle = `hsla(${h},80%,65%,.9)`; c.lineWidth = 1; c.setLineDash([4, 3]); c.strokeRect(X + .5, Y + .5, W - 1, H - 1); c.setLineDash([]);
+      if (s >= 8) {
+        c.font = `${Math.max(9, Math.min(12, s))}px system-ui, sans-serif`; c.textAlign = 'left'; c.textBaseline = 'top';
+        const label = r.name; const tw = c.measureText(label).width;
+        c.save(); c.beginPath(); c.rect(X, Y, W, H); c.clip();   // a label never spills into the neighbour region
+        c.fillStyle = 'rgba(0,0,0,.6)'; c.fillRect(X + 2, Y + 2, tw + 6, 14);
+        c.fillStyle = `hsl(${h},85%,75%)`; c.fillText(label, X + 5, Y + 3);
+        c.restore();
+        c.textAlign = 'center'; c.textBaseline = 'middle';
+      }
+    });
+  }
+  // anchors
+  if (S.showAnchors) {
+    const byCell = new Map();
+    for (const [k, v] of Object.entries(z.doc.anchors)) {
+      if (drag && drag.kind === 'anchor' && drag.name === k) continue;
+      const key = v[0] + ',' + v[1]; if (!byCell.has(key)) byCell.set(key, { cell: v, names: [] });
+      byCell.get(key).names.push(k);
+    }
+    for (const { cell, names } of byCell.values()) drawAnchor(c, cell, names, s, false);
+  }
+  // drag ghost
+  if (drag && S.hover) {
+    const [hx, hz] = S.hover, X = hx * s, Y = hz * s;
+    if (drag.kind === 'char') {
+      const okDrop = dropAllowed(z, drag.ch, hx, hz);
+      c.fillStyle = okDrop ? 'rgba(110,168,255,.35)' : 'rgba(255,80,80,.35)'; c.fillRect(X, Y, s, s);
+      c.font = glyphFont; c.fillStyle = LEG[drag.ch] && LEG[drag.ch].glyph || '#fff'; c.fillText(drag.ch, X + s / 2, Y + s / 2 + 1);
+      c.strokeStyle = okDrop ? '#6ea8ff' : '#ff5c5c'; c.lineWidth = 2; c.strokeRect(X + 1, Y + 1, s - 2, s - 2);
+      c.strokeStyle = 'rgba(255,255,255,.5)'; c.lineWidth = 1; c.setLineDash([2, 2]); c.strokeRect(drag.from[0] * s + .5, drag.from[1] * s + .5, s - 1, s - 1); c.setLineDash([]);
+    } else if (drag.kind === 'anchor') {
+      drawAnchor(c, [hx, hz], [drag.name], s, true);
+    }
+  }
+  // hover cell outline
+  if (S.hover && !(drag && drag.kind !== 'paint')) {
+    const [hx, hz] = S.hover;
+    c.strokeStyle = '#ffffff'; c.lineWidth = 1; c.strokeRect(hx * s + .5, hz * s + .5, s - 1, s - 1);
+  }
+}
+
+function drawAnchor(c, cell, names, s, ghost) {
+  const X = cell[0] * s, Y = cell[1] * s;
+  const m = Math.max(3, Math.round(s * 0.3));
+  c.fillStyle = ghost ? '#ffffff' : '#ffb347';
+  c.beginPath(); c.moveTo(X + s - 1, Y + 1); c.lineTo(X + s - 1, Y + 1 + m); c.lineTo(X + s - 1 - m, Y + 1); c.closePath(); c.fill();
+  c.strokeStyle = '#000'; c.lineWidth = 1; c.stroke();
+  if (s >= 10) {
+    const label = names.join(', ');
+    c.font = `${Math.max(8, Math.min(10, s - 3))}px system-ui, sans-serif`; c.textAlign = 'left'; c.textBaseline = 'top';
+    const tw = c.measureText(label).width;
+    let lx = X + s + 1, ly = Y - 1;
+    if (lx + tw + 4 > grid.width) lx = X - tw - 5;
+    c.fillStyle = 'rgba(0,0,0,.7)'; c.fillRect(lx - 1, ly, tw + 4, 11);
+    c.fillStyle = ghost ? '#fff' : '#ffd08a'; c.fillText(label, lx + 1, ly + 1);
+    c.textAlign = 'center'; c.textBaseline = 'middle';
+  }
+}
+
+// ---- side panel ------------------------------------------------------------------------------
+function renderSide() {
+  const z = Z(); if (!z) return;
+  $('zinfo').textContent = `${z.doc.id} · ${z.size}×${z.size} · entry ${z.entry} · hunters: ${z.hunters.join(', ') || '—'} · creatures: ${(z.creatures || []).map(c => c.kind).join(', ') || '—'}`;
+  renderValidation();
+  const wb = $('written-box'); wb.hidden = !z.written; if (z.written) $('written').textContent = z.written.join('\n');
+  renderHover();
+}
+
+function renderValidation() {
+  const z = Z(); const v = z.validation; const vs = $('vstate');
+  $('parse').textContent = z.parse_error ? `parse error: ${z.parse_error}`
+    : z.stale ? `${z.doc.id} changed on disk since this page loaded it (a hand edit or another tab); reload the page to pick it up, or Save will ask before overwriting it` : '';
+  const fill = (id, list) => { const ul = $(id); ul.innerHTML = ''; for (const m of list || []) { const li = document.createElement('li'); li.textContent = m; ul.appendChild(li); } };
+  if (z.pending) { vs.textContent = '(checking…)'; vs.className = 'pend'; }
+  else if (z.parse_error) { vs.textContent = 'does not parse'; vs.className = 'bad'; }
+  else if (!v) { vs.textContent = '—'; vs.className = 'pend'; }
+  else if (v.errors.length) { vs.textContent = `${v.errors.length} error${v.errors.length > 1 ? 's' : ''}${v.warnings.length ? `, ${v.warnings.length} warning${v.warnings.length > 1 ? 's' : ''}` : ''}`; vs.className = 'bad'; }
+  else if (v.warnings.length) { vs.textContent = `${v.warnings.length} warning${v.warnings.length > 1 ? 's' : ''}`; vs.className = 'warn'; }
+  else { vs.textContent = 'clean'; vs.className = 'ok'; }
+  fill('errors', v && v.errors); fill('warnings', v && v.warnings);
+  const st = v && v.stats; const out = [];
+  if (st) {
+    out.push(`<b>walkable</b> ${st.walkable}  <b>walls</b> ${st.walls} (${(st.wallShare * 100).toFixed(1)}%)  <b>reachable</b> ${st.reachable}`);
+    if (st.route) out.push(`<b>route</b> closed ${st.route.closed} · open ${st.route.open}`);
+    out.push(`<b>loot</b> oil ${st.o} · relic ${st.r} · rich ${st.R}  <b>H</b> ${st.H} <b>N</b> ${st.N} <b>C</b> ${st.C} <b>X</b> ${st.X} <b>=</b> ${st['=']}`);
+    if (st.gatedCells) out.push(`<b>gated cells</b> ${st.gatedCells}${st.behindGate && st.behindGate.length ? ` (${st.behindGate.join(', ')})` : ''}`);
+    if (st.shortcutOnlyCells) out.push(`<b>shortcut-only cells</b> ${st.shortcutOnlyCells}`);
+    if (st.unassigned != null) out.push(`<b>unassigned cells</b> ${st.unassigned}`);
+    for (const sc of st.shortcuts || []) out.push(`<b>${sc.id}</b> detour ${sc.detour} (saves ${sc.saves}) · barred ${sc.dBarred} · open ${sc.dOpen}`);
+    if (st.altarLap != null) out.push(`<b>altar lap</b> ${st.altarLap}${st.hunterLaps ? `  <b>hunter laps</b> ${st.hunterLaps.join(', ')}` : ''}`);
+    if (st.creatureLaps) out.push(`<b>creature laps</b> ${st.creatureLaps.map(c => `${c.kind}@(${c.cell[0]},${c.cell[1]}) lap ${c.lap}`).join(', ')}`);
+  }
+  $('stats').innerHTML = out.join('\n') || '<span class="k">—</span>';
+}
+
+function renderHover() {
+  const z = Z(); const h = $('hover');
+  if (!S.hover) { h.innerHTML = '<span class="k">hover the grid</span>'; return; }
+  const [x, zz] = S.hover; const ch = z.doc.rows[zz] ? z.doc.rows[zz][x] : undefined;
+  const L = LEG[ch]; const k = kindAt(z, x, zz);
+  const r = regionAt(z, x, zz);
+  const lines = [
+    `(${x}, ${zz})  '${ch === undefined ? '' : ch}'  ${L ? L.name : 'unknown char'}  [${KIND_NAME[k] || k}]`,
+    `region: ${r ? `${r.name} (${r.id})` : '—'}`,
+  ];
+  const a = anchorsAt(z, x, zz); if (a.length) lines.push(`anchors: ${a.join(', ')}`);
+  for (const ref of refsAt(z, x, zz)) lines.push(ref);
+  h.textContent = lines.join('\n');
+}
+
+// ---- editing ---------------------------------------------------------------------------------
+function pushUndo(z) {
+  z.undo.push(docJSON(z.doc)); if (z.undo.length > 200) z.undo.shift();
+  z.redo.length = 0;
+}
+function afterChange(z) {
+  refreshTabs(); render(); renderHover(); schedulePreview(z);
+}
+function setCell(z, x, zz, ch) {
+  const row = z.doc.rows[zz];
+  z.doc.rows[zz] = row.slice(0, x) + ch + row.slice(x + 1);
+}
+function vacatedChar(z, x, zz) {
+  const ch = z.doc.rows[zz][x]; const k = kindAt(z, x, zz);
+  if (DOOR_CHARS.includes(ch)) return '#';          // doors live in wall lines; moving one must not open a hole
+  if (ch === 'w' || k === KIND.water) return 'W';
+  if (ch === 'R' || k === KIND.deep) return 'D';
+  return '.';
+}
+function dropAllowed(z, ch, x, zz) {
+  // only onto empty terrain, so a drop never overwrites another entity, a spot, the spawn or a door
+  // (whose references would then point at a cell without their char) and never turns water into floor
+  if (x < 0 || zz < 0 || x >= z.size || zz >= z.size) return false;
+  const t = z.doc.rows[zz][x];
+  if (t === '.' || t === 'D') return true;
+  if (t === '#' || t === 'P') return DOOR_CHARS.includes(ch);
+  if (t === 'W') return ch === 'w';
+  return false;
+}
+function retarget(cells, from, to) { for (const c of cells) if (cellEq(c, from)) { c[0] = to[0]; c[1] = to[1]; } }
+function moveChar(z, from, to) {
+  const ch = z.doc.rows[from[1]][from[0]];
+  if (cellEq(from, to) || !dropAllowed(z, ch, to[0], to[1])) return false;
+  pushUndo(z);
+  const vac = vacatedChar(z, from[0], from[1]);
+  setCell(z, from[0], from[1], vac);
+  setCell(z, to[0], to[1], ch);
+  // every reference equal to the vacated cell follows the char
+  for (const k of Object.keys(z.doc.anchors)) if (cellEq(z.doc.anchors[k], from)) z.doc.anchors[k] = [to[0], to[1]];
+  for (const k of Object.keys(z.doc.npcs)) if (cellEq(z.doc.npcs[k], from)) z.doc.npcs[k] = [to[0], to[1]];
+  if (z.doc.gate) retarget(z.doc.gate.cells, from, to);
+  for (const sp of z.doc.spots) if (cellEq(sp.cell, from)) sp.cell = [to[0], to[1]];
+  for (const sc of z.doc.shortcuts) retarget(sc.cells, from, to);
+  // the moved char's own floor type is derived by the parser; the local fallback kind becomes stale, so ask the server
+  setStatus(`moved '${ch}' (${from[0]},${from[1]}) → (${to[0]},${to[1]}); vacated cell is '${vac}'`);
+  return true;
+}
+function moveAnchor(z, name, to) {
+  if (to[0] < 0 || to[1] < 0 || to[0] >= z.size || to[1] >= z.size) return false;
+  if (cellEq(z.doc.anchors[name], to)) return false;
+  pushUndo(z);
+  z.doc.anchors[name] = [to[0], to[1]];
+  setStatus(`anchor ${name} → (${to[0]},${to[1]})`);
+  return true;
+}
+function paintCell(z, x, zz, ch) {
+  if (z.doc.rows[zz][x] === ch) return false;
+  setCell(z, x, zz, ch); return true;
+}
+function undo() {
+  const z = Z(); if (!z.undo.length) return;
+  z.redo.push(docJSON(z.doc)); z.doc = JSON.parse(z.undo.pop());
+  setStatus('undo'); afterChange(z);
+}
+function redo() {
+  const z = Z(); if (!z.redo.length) return;
+  z.undo.push(docJSON(z.doc)); z.doc = JSON.parse(z.redo.pop());
+  setStatus('redo'); afterChange(z);
+}
+
+// ---- preview (live validation) ---------------------------------------------------------------
+function schedulePreview(z) {
+  z.pending = true; renderValidation();
+  clearTimeout(S.previewTimer);
+  S.previewTimer = setTimeout(() => runPreview(z), 250);
+}
+async function runPreview(z) {
+  const seq = ++S.previewSeq; const sent = docJSON(z.doc);
+  try {
+    const r = await api('/api/preview', { doc: z.doc });
+    if (seq !== S.previewSeq) return;            // a newer preview is in flight
+    applyPreview(z, r);
+    if (docJSON(z.doc) !== sent) return;          // edited meanwhile; the next preview is already scheduled
+    z.pending = false;
+  } catch (e) {
+    if (seq !== S.previewSeq) return;
+    z.pending = false; setStatus(`preview failed: ${e.message}`, 'err');
+  }
+  if (z === Z()) { renderValidation(); render(); renderHover(); }
+}
+function applyPreview(z, r) {
+  if (r.base) z.stale = r.base !== z.base;
+  z.parse_error = r.parse_error || null;
+  if (r.kinds) z.kinds = r.kinds;
+  if (r.validation) z.validation = r.validation; else if (r.parse_error) z.validation = null;
+}
+
+// ---- save ------------------------------------------------------------------------------------
+async function save() {
+  const z = Z(); if (!z || S.saving) return;
+  if (z.parse_error) { setStatus(`not saved: the map does not parse (${z.parse_error})`, 'err'); return; }
+  if (z.pending) { clearTimeout(S.previewTimer); await runPreview(z); if (z.parse_error) { setStatus(`not saved: the map does not parse (${z.parse_error})`, 'err'); return; } }
+  const v = z.validation;
+  if (v && (v.errors.length || v.warnings.length)) {
+    const head = [];
+    if (v.errors.length) head.push(`${v.errors.length} error(s)`);
+    if (v.warnings.length) head.push(`${v.warnings.length} warning(s)`);
+    const sample = [...v.errors, ...v.warnings].slice(0, 6).join('\n');
+    if (!confirm(`${z.name} has ${head.join(' and ')}:\n\n${sample}${v.errors.length + v.warnings.length > 6 ? '\n…' : ''}\n\nSave anyway?`)) { setStatus('save cancelled'); return; }
+  }
+  S.saving = true; setStatus(`saving ${z.doc.id}…`);
+  try {
+    // what goes on the wire is what counts as saved: an edit made while the request is in flight stays dirty
+    const sent = docJSON(z.doc);
+    let r = await api('/api/save', { doc: JSON.parse(sent), base: z.base });
+    if (r.stale && !r.saved) {
+      // the zone changed on disk since the page loaded it; overwriting is an explicit choice
+      z.stale = true; renderValidation();
+      if (confirm(`${z.name} changed on disk since this page loaded it (a hand edit or another editor tab).\n\nOverwrite the on-disk changes with this page's version?\n(Cancel keeps your edits here; reload the page to see the disk version.)`)) {
+        r = await api('/api/save', { doc: JSON.parse(sent), base: null });
+      }
+    }
+    applyPreview(z, r);
+    if (r.saved) {
+      z.savedJSON = sent; z.written = r.written || [];
+      if (r.base) { z.base = r.base; z.stale = false; }
+      setStatus(`saved ${z.doc.id}: ${z.written.length} file(s) written`, 'ok');
+      if (docJSON(z.doc) !== sent) schedulePreview(z);   // edited during the request: still dirty
+    } else {
+      setStatus((r.reason || 'not saved: server refused').replace(/^(not saved: )?/, 'not saved: '), 'err');
+    }
+  } catch (e) { setStatus(`save failed: ${e.message}`, 'err'); }
+  S.saving = false;
+  refreshTabs(); renderSide(); render();
+}
+
+// ---- mouse -----------------------------------------------------------------------------------
+function cellFromEvent(e) {
+  const r = grid.getBoundingClientRect();
+  const x = Math.floor((e.clientX - r.left) / S.zoom), zz = Math.floor((e.clientY - r.top) / S.zoom);
+  const z = Z(); if (!z || x < 0 || zz < 0 || x >= z.size || zz >= z.size) return null;
+  return [x, zz];
+}
+function anchorHit(e, cell) {
+  // the marker is the top-right corner of its cell
+  if (!S.showAnchors) return null;
+  const r = grid.getBoundingClientRect(); const s = S.zoom;
+  const fx = (e.clientX - r.left) - cell[0] * s, fz = (e.clientY - r.top) - cell[1] * s;
+  const m = Math.max(4, Math.round(s * 0.42));
+  if (fx < s - m || fz > m) return null;
+  const names = anchorsAt(Z(), cell[0], cell[1]);
+  return names.length ? names[0] : null;
+}
+grid.addEventListener('mousedown', e => {
+  if (e.button !== 0) return;
+  const z = Z(); const cell = cellFromEvent(e); if (!z || !cell) return;
+  e.preventDefault();
+  const [x, zz] = cell;
+  if (S.tool === 'move') {
+    const ch = z.doc.rows[zz][x];
+    const movable = MOVABLE.includes(ch);
+    // the corner marker wins only when the cell holds nothing movable, or with Shift: an anchor that sits on
+    // an N/H normally moves with the char, and grabbing it alone by accident desyncs it silently
+    const a = (!movable || e.shiftKey) ? anchorHit(e, cell) : null;
+    if (a) { S.drag = { kind: 'anchor', name: a, from: cell }; }
+    else if (movable && !e.shiftKey) S.drag = { kind: 'char', ch, from: cell };
+    else { const names = anchorsAt(z, x, zz); if (names.length) S.drag = { kind: 'anchor', name: names[0], from: cell }; }
+    if (S.drag) grid.classList.add('dragging');
+  } else {
+    const ch = S.tool === 'paint' ? S.paintChar : null;
+    S.drag = { kind: 'paint', ch, snap: docJSON(z.doc), changed: false };
+    strokeCell(z, x, zz);
+  }
+  render();
+});
+function strokeCell(z, x, zz) {
+  const d = S.drag; const ch = d.ch === null ? '.' : d.ch;   // erase = plain floor, whatever was there
+  if (paintCell(z, x, zz, ch)) {
+    if (!d.changed) { z.undo.push(d.snap); if (z.undo.length > 200) z.undo.shift(); z.redo.length = 0; d.changed = true; }
+    refreshTabs(); schedulePreview(z);
+  }
+}
+window.addEventListener('mousemove', e => {
+  const z = Z(); if (!z) return;
+  const cell = cellFromEvent(e);
+  const changed = (cell && S.hover) ? !cellEq(cell, S.hover) : cell !== S.hover;
+  S.hover = cell;
+  if (S.drag && S.drag.kind === 'paint' && cell) strokeCell(z, cell[0], cell[1]);
+  if (changed || S.drag) { render(); renderHover(); }
+});
+window.addEventListener('mouseup', e => {
+  const z = Z(); const d = S.drag; if (!z || !d) return;
+  S.drag = null; grid.classList.remove('dragging');
+  const cell = cellFromEvent(e);
+  if (d.kind === 'char') {
+    if (cell && moveChar(z, d.from, cell)) afterChange(z);
+    else if (cell && !cellEq(cell, d.from) && !dropAllowed(z, d.ch, cell[0], cell[1])) { setStatus(`drop refused: (${cell[0]},${cell[1]}) holds '${z.doc.rows[cell[1]][cell[0]]}'`, 'err'); render(); }
+    else { setStatus('move cancelled'); render(); }
+  } else if (d.kind === 'anchor') {
+    if (cell && moveAnchor(z, d.name, cell)) afterChange(z); else { setStatus('anchor move cancelled'); render(); }
+  } else if (d.kind === 'paint') {
+    if (d.changed) setStatus(d.ch === null ? 'erased' : `painted '${d.ch}'`);
+    render(); renderHover();
+  }
+});
+grid.addEventListener('mouseleave', () => { if (!S.drag) { S.hover = null; render(); renderHover(); } });
+grid.addEventListener('contextmenu', e => e.preventDefault());
+
+// ---- keyboard ------------------------------------------------------------------------------
+window.addEventListener('keydown', e => {
+  const tag = (e.target.tagName || '').toLowerCase(); if (tag === 'input' && e.target.type === 'text') return;
+  const mod = e.ctrlKey || e.metaKey;
+  if (mod && (e.key === 's' || e.key === 'S')) { e.preventDefault(); save(); return; }
+  if (mod && (e.key === 'z' || e.key === 'Z')) { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
+  if (mod && (e.key === 'y' || e.key === 'Y')) { e.preventDefault(); redo(); return; }
+  if (mod) return;
+  if (e.key === '+' || e.key === '=') { setZoom(S.zoom + 1); }
+  else if (e.key === '-' || e.key === '_') { setZoom(S.zoom - 1); }
+  else if (e.key === 'm' || e.key === 'M') setTool('move');
+  else if (e.key === 'p' || e.key === 'P') setTool('paint');
+  else if (e.key === 'e' || e.key === 'E') setTool('erase');
+  else if (e.key === 'Escape' && S.drag) { S.drag = null; grid.classList.remove('dragging'); setStatus('cancelled'); render(); }
+});
+window.addEventListener('beforeunload', e => { if (S.zones.some(isDirty)) { e.preventDefault(); e.returnValue = ''; } });
+
+// ---- wiring --------------------------------------------------------------------------------
+$('t-move').onclick = () => setTool('move');
+$('t-paint').onclick = () => setTool('paint');
+$('t-erase').onclick = () => setTool('erase');
+$('undo').onclick = undo; $('redo').onclick = redo;
+$('save').onclick = save;
+$('zoom').oninput = e => setZoom(+e.target.value);
+$('ov-regions').onchange = e => { S.showRegions = e.target.checked; render(); };
+$('ov-anchors').onchange = e => { S.showAnchors = e.target.checked; render(); };
+
+// Exposed for headless QA (tools/qa) — not used by the page itself.
+window.__editor = { S, Z, moveChar, moveAnchor, undo, redo, save, setTool, setPaint, setZoom, render, runPreview, selectZone, docJSON };
+
+loadZones().catch(e => { setStatus(`load failed: ${e.message}`, 'err'); console.error(e); });
+</script>
+</body>
+</html>
