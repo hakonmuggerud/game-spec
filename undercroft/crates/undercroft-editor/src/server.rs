@@ -1,11 +1,11 @@
 //! The `tiny_http` server: binds `0.0.0.0:8790` (`UNDERCROFT_EDITOR_ADDR`), data dir
 //! `GameData::workspace_data_dir()` (`UNDERCROFT_DATA_DIR`), fixtures dir `GameData::workspace_fixtures_dir()`
-//! (`UNDERCROFT_FIXTURES_DIR`). Routes: `GET /` (the embedded `web/index.html`), `GET /api/zones`,
+//! (`UNDERCROFT_FIXTURES_DIR`), `DESIGN.md` next to `assets/` (`UNDERCROFT_DESIGN_MD`). Routes: `GET /` (the embedded `web/index.html`), `GET /api/zones`,
 //! `POST /api/preview`, `POST /api/save`; every request reloads `GameData` from disk, JSON responses set
 //! `Content-Type: application/json`, errors are `{ "error": "…" }` with a 4xx/5xx status.
 
 use crate::doc::{self, ZoneDoc};
-use crate::save;
+use crate::{design_md, save};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use tiny_http::{Header, Method, Request, Response, Server};
@@ -20,17 +20,22 @@ pub struct Config {
     pub addr: String,
     pub data_dir: PathBuf,
     pub fixtures_dir: PathBuf,
+    /// The DESIGN.md whose ASCII map blocks a save rewrites; skipped when it does not exist.
+    pub design_md: PathBuf,
 }
 
 impl Config {
-    /// From the environment (`UNDERCROFT_EDITOR_ADDR`, `UNDERCROFT_DATA_DIR`, `UNDERCROFT_FIXTURES_DIR`).
+    /// From the environment (`UNDERCROFT_EDITOR_ADDR`, `UNDERCROFT_DATA_DIR`, `UNDERCROFT_FIXTURES_DIR`,
+    /// `UNDERCROFT_DESIGN_MD`; the last defaults to `<data dir>/../../DESIGN.md`).
     pub fn from_env() -> Config {
         let dir = |key: &str, default: PathBuf| {
             std::env::var_os(key).map(PathBuf::from).unwrap_or(default)
         };
+        let data_dir = dir("UNDERCROFT_DATA_DIR", GameData::workspace_data_dir());
         Config {
             addr: std::env::var("UNDERCROFT_EDITOR_ADDR").unwrap_or_else(|_| "0.0.0.0:8790".into()),
-            data_dir: dir("UNDERCROFT_DATA_DIR", GameData::workspace_data_dir()),
+            design_md: dir("UNDERCROFT_DESIGN_MD", design_md::default_path(&data_dir)),
+            data_dir,
             fixtures_dir: dir(
                 "UNDERCROFT_FIXTURES_DIR",
                 GameData::workspace_fixtures_dir(),
@@ -220,6 +225,7 @@ pub fn handle(config: &Config, method: &Method, url: &str, body: &str) -> Reply 
                 base.as_deref(),
                 &config.data_dir,
                 &config.fixtures_dir,
+                &config.design_md,
             );
             Reply::json(200, &result)
         }
@@ -247,6 +253,15 @@ pub fn run(config: &Config) -> Result<(), String> {
     println!("editor: http://{}/", config.addr);
     println!("data: {}", config.data_dir.display());
     println!("fixtures: {}", config.fixtures_dir.display());
+    println!(
+        "DESIGN.md: {}{}",
+        config.design_md.display(),
+        if config.design_md.is_file() {
+            ""
+        } else {
+            " (not found: map blocks will not be rewritten)"
+        }
+    );
     for mut request in server.incoming_requests() {
         let mut body = String::new();
         if let Err(e) = request.as_reader().read_to_string(&mut body) {
@@ -278,6 +293,7 @@ mod tests {
             addr: "127.0.0.1:0".into(),
             data_dir: GameData::workspace_data_dir(),
             fixtures_dir: GameData::workspace_fixtures_dir(),
+            design_md: design_md::default_path(&GameData::workspace_data_dir()),
         }
     }
 

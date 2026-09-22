@@ -144,7 +144,8 @@
 // Undercroft map editor — one page, vanilla JS + <canvas>. Talks to the undercroft-editor server:
 //   GET  /api/zones          -> { zones: [ZoneInfo] }
 //   POST /api/preview {doc}  -> { parse_error, kinds, validation }
-//   POST /api/save    {doc}  -> preview result & { saved, written, reason }
+//   POST /api/save    {doc, base} -> preview result & { saved, written, reason, stale, base, synced, notes }
+//                     synced: [{id, from, to}] shortcut saves the server corrected to the measured detour
 // The client holds one ZoneDoc per zone (rows, anchors, npcs, gate, spots, shortcuts, regions) and
 // sends it back verbatim; `kinds` (CellKind per cell) comes from the server after every change.
 // ---------------------------------------------------------------------------------------------
@@ -680,10 +681,17 @@ async function save() {
     }
     applyPreview(z, r);
     if (r.saved) {
-      z.savedJSON = sent; z.written = r.written || [];
+      // the server sets each shortcut's saves to the measured detour: what is on disk is the sent doc with
+      // those applied, and the page's doc follows so the next save is not corrected again
+      const synced = r.synced || [];
+      const applySynced = doc => { for (const s of synced) { const sc = doc.shortcuts.find(x => x.id === s.id); if (sc && sc.saves === s.from) sc.saves = s.to; } return doc; };
+      const onDisk = docJSON(applySynced(JSON.parse(sent)));
+      applySynced(z.doc);
+      z.savedJSON = onDisk; z.written = (r.written || []).concat(r.notes || []);
       if (r.base) { z.base = r.base; z.stale = false; }
-      setStatus(`saved ${z.doc.id}: ${z.written.length} file(s) written`, 'ok');
-      if (docJSON(z.doc) !== sent) schedulePreview(z);   // edited during the request: still dirty
+      const notes = (r.notes || []).length ? ' · ' + r.notes.join(' · ') : '';
+      setStatus(`saved ${z.doc.id}: ${(r.written || []).length} file(s) written${notes}`, 'ok');
+      if (docJSON(z.doc) !== onDisk) schedulePreview(z);   // edited during the request: still dirty
     } else {
       setStatus((r.reason || 'not saved: server refused').replace(/^(not saved: )?/, 'not saved: '), 'err');
     }

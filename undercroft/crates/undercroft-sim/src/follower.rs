@@ -983,6 +983,12 @@ mod tests {
         (z, m)
     }
 
+    /// A captive's cell from `zones.ron` and the world position at its centre (the map editor moves them).
+    fn npc_cell(z: &ZoneDef, id: &str) -> ((i32, i32), (f32, f32)) {
+        let c = z.npcs[id];
+        ((c[0], c[1]), (c[0] as f32 + 0.5, c[1] as f32 + 0.5))
+    }
+
     #[test]
     fn captives_stand_in_their_cells() {
         let d = data();
@@ -993,9 +999,10 @@ mod tests {
         let mut caps = n.captives();
         caps.sort();
         assert_eq!(caps, vec!["deacon", "lamplighter"]);
+        let (wick_cell, (wx, wz)) = npc_cell(&z, "lamplighter");
         let w = n.get("lamplighter").unwrap();
-        assert_eq!(w.cell, Some((4, 47)));
-        assert_eq!((w.x, w.z), (4.5, 47.5));
+        assert_eq!(w.cell, Some(wick_cell));
+        assert_eq!((w.x, w.z), (wx, wz));
         assert_eq!(w.state, NpcState::Captive);
         // every N cell of the map holds a captive
         for c in &m.npc_cells {
@@ -1014,8 +1021,8 @@ mod tests {
         // interact target
         let cfg = &d.config.npc_cfg;
         let p = PlayerView {
-            x: 5.5,
-            z: 47.5,
+            x: wx + 1.0,
+            z: wz,
             ..Default::default()
         };
         let t = n.interact_target(cfg, true, false, &p).expect("in reach");
@@ -1028,8 +1035,8 @@ mod tests {
             }
         );
         let far = PlayerView {
-            x: 7.5,
-            z: 47.5,
+            x: wx + 3.0,
+            z: wz,
             ..Default::default()
         };
         assert!(n.interact_target(cfg, true, false, &far).is_none());
@@ -1046,6 +1053,7 @@ mod tests {
         n.spawn_zone(&d, &z, &m, &save);
         assert!(!n.free(&d, &m, "lamplighter", false).0, "not in ZONE mode");
         assert!(!n.free(&d, &m, "keeper", true).0, "not here");
+        let (_, (wx, wz)) = npc_cell(&z, "lamplighter");
         let (ok, ev) = n.free(&d, &m, "lamplighter", true);
         assert!(ok);
         assert_eq!(
@@ -1053,8 +1061,8 @@ mod tests {
             vec![
                 SimEvent::NpcFreed {
                     id: "lamplighter".into(),
-                    x: 4.5,
-                    z: 47.5
+                    x: wx,
+                    z: wz
                 },
                 SimEvent::toast("Wick follows you. Bring him to the stairs."),
             ]
@@ -1072,8 +1080,8 @@ mod tests {
         assert!(!n.free(&d, &m, "lamplighter", true).0, "already following");
         // stimulus: walking, lamp off, lit within litR of the lit player
         let mut p = PlayerView {
-            x: 6.5,
-            z: 47.5,
+            x: wx + 2.0,
+            z: wz,
             lamp_on: true,
             ..Default::default()
         };
@@ -1083,17 +1091,7 @@ mod tests {
         assert!(s.lit && s.moving && !s.in_pool);
         assert_eq!(n.hud_line(1.0, true), "◆ Wick follows (lit)");
         // a lantern pool makes it safe
-        let ev = n.update_zone(
-            &d,
-            cfg,
-            &d.config.cfg,
-            0.1,
-            1.1,
-            &p,
-            &m,
-            &[(4.5, 47.5)],
-            &[],
-        );
+        let ev = n.update_zone(&d, cfg, &d.config.cfg, 0.1, 1.1, &p, &m, &[(wx, wz)], &[]);
         assert!(ev.is_empty());
         assert!(n.stimulus().unwrap().in_pool);
         assert_eq!(n.hud_line(1.1, true), "◆ Wick follows (safe)");
@@ -1174,9 +1172,10 @@ mod tests {
         let save = SaveData::default();
         n.spawn_zone(&d, &z, &m, &save);
         n.free(&d, &m, "deacon", true);
+        let (_, (mx, mz)) = npc_cell(&z, "deacon");
         let p = PlayerView {
-            x: 6.5,
-            z: 5.5,
+            x: mx + 2.0,
+            z: mz,
             lamp_on: false,
             ..Default::default()
         };
@@ -1232,7 +1231,7 @@ mod tests {
         n.update_zone(&d, cfg, &d.config.cfg, 0.6, 11.1, &p, &m, &[], &hunters);
         let r = n.get("deacon").unwrap();
         assert_eq!(r.state, NpcState::Captive);
-        assert_eq!((r.x, r.z), (4.5, 5.5));
+        assert_eq!((r.x, r.z), (mx, mz));
         assert_eq!(r.y, 0.0);
         // in a pool it cannot be caught; a busy hunter cannot catch either
         n.free(&d, &m, "deacon", true);
@@ -1244,7 +1243,7 @@ mod tests {
             20.0,
             &p,
             &m,
-            &[(4.5, 5.5)],
+            &[(mx, mz)],
             &hunters[2..],
         );
         assert!(ev.is_empty());

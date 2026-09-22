@@ -1,14 +1,19 @@
 //! Saving a `ZoneDoc`: writes `maps/<id>.txt` (rows joined by `\n`, trailing newline), `zones.ron` through
-//! `ron_io`, `npcs.ron` only when an NPC cell changed, then the fixtures; returns the list of paths written
-//! (relative) so the page can show them. Refuses a doc whose rows do not parse, and (when the page sends the
-//! `base` fingerprint it loaded with) a doc whose zone changed on disk since.
+//! `ron_io`, `npcs.ron` only when an NPC cell changed, the fixtures, then the zone's ASCII map block in
+//! `DESIGN.md` (`design_md`); returns the list of paths written (relative) so the page can show them. Refuses a
+//! doc whose rows do not parse, and (when the page sends the `base` fingerprint it loaded with) a doc whose
+//! zone changed on disk since.
+//!
+//! Before anything is rendered every `ShortcutDef.saves` of the zone is set to the detour the validator
+//! measured for that door (`stats.shortcuts[].detour`), so `zones.ron`, the fixture's `shortcuts[].saves` and
+//! the stats agree without a hand fix; a door the validator could not measure keeps its declared value.
 //!
 //! The save is all-or-nothing: every file is rendered in memory first (so a fixture that cannot be derived —
 //! say a map with no spawn — changes nothing), then each one is written through a temp file + rename, and a
 //! write that fails rolls the files already replaced back to their previous bytes.
 
 use crate::doc::{self, PreviewResult, ZoneDoc};
-use crate::{fixtures, ron_io};
+use crate::{design_md, fixtures, ron_io};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use undercroft_data::{GameData, NpcTable, ZoneDef};
@@ -28,6 +33,57 @@ pub struct SaveResult {
     pub stale: bool,
     /// The zone's on-disk fingerprint after the call (`doc::fingerprint`), for the page's next save.
     pub base: Option<String>,
+    /// Shortcut `saves` values the save corrected to the validator's detour (the page applies them to its doc).
+    #[serde(default)]
+    pub synced: Vec<SavesSync>,
+    /// What else happened, for the status line: `u_rood saves 152 -> 154`, a `DESIGN.md` that was not there.
+    #[serde(default)]
+    pub notes: Vec<String>,
+}
+
+/// One `ShortcutDef.saves` correction: `from` (declared) -> `to` (measured).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SavesSync {
+    pub id: String,
+    pub from: i32,
+    pub to: i32,
+}
+
+/// The doc with every shortcut's `saves` set to the detour `preview` measured for it. A door without a
+/// measurement (no stats, an id the validator did not report, or a detour of −1 = the flanks are not
+/// connected with the door shut) keeps its declared value and gets a note.
+fn sync_saves(doc: &ZoneDoc, preview: &PreviewResult) -> (ZoneDoc, Vec<SavesSync>, Vec<String>) {
+    let mut doc = doc.clone();
+    let mut synced = Vec::new();
+    let mut notes = Vec::new();
+    let stats = preview.validation.as_ref().and_then(|v| v.stats.as_ref());
+    for sc in &mut doc.shortcuts {
+        let measured = stats
+            .and_then(|st| st.shortcuts.iter().find(|s| s.id == sc.id))
+            .map(|s| s.detour);
+        match measured {
+            Some(detour) if detour >= 0 => {
+                if detour != sc.saves {
+                    notes.push(format!("{} saves {} -> {}", sc.id, sc.saves, detour));
+                    synced.push(SavesSync {
+                        id: sc.id.clone(),
+                        from: sc.saves,
+                        to: detour,
+                    });
+                    sc.saves = detour;
+                }
+            }
+            Some(_) => notes.push(format!(
+                "{} saves {} kept: the validator found no detour around the door (flanks not connected)",
+                sc.id, sc.saves
+            )),
+            None => notes.push(format!(
+                "{} saves {} kept: the validator did not measure the door",
+                sc.id, sc.saves
+            )),
+        }
+    }
+    (doc, synced, notes)
 }
 
 /// `<dir name>/<rel>` for the `written` list.
@@ -39,9 +95,16 @@ fn label(dir: &Path, rel: &str) -> String {
     format!("{name}/{rel}")
 }
 
-/// Write the doc to the data directory and regenerate the fixtures. `base` is the fingerprint the page
+/// Write the doc to the data directory, regenerate the fixtures and rewrite the zone's map block in
+/// `design_md` (skipped with a note when that file does not exist). `base` is the fingerprint the page
 /// loaded the zone with (`None` skips the check).
-pub fn save(doc: &ZoneDoc, base: Option<&str>, data_dir: &Path, fixtures_dir: &Path) -> SaveResult {
+pub fn save(
+    doc: &ZoneDoc,
+    base: Option<&str>,
+    data_dir: &Path,
+    fixtures_dir: &Path,
+    design_md: &Path,
+) -> SaveResult {
     let refuse = |preview: PreviewResult, reason: String| SaveResult {
         preview,
         saved: false,
@@ -49,6 +112,8 @@ pub fn save(doc: &ZoneDoc, base: Option<&str>, data_dir: &Path, fixtures_dir: &P
         reason: Some(reason),
         stale: false,
         base: None,
+        synced: Vec::new(),
+        notes: Vec::new(),
     };
     let data = match GameData::from_dir(data_dir) {
         Ok(d) => d,
@@ -84,10 +149,14 @@ pub fn save(doc: &ZoneDoc, base: Option<&str>, data_dir: &Path, fixtures_dir: &P
                 )),
                 stale: true,
                 base: on_disk,
+                synced: Vec::new(),
+                notes: Vec::new(),
             };
         }
     }
-    let files = match plan(doc, &data, data_dir, fixtures_dir) {
+    let (doc, synced, mut notes) = sync_saves(doc, &preview);
+    let doc = &doc;
+    let files = match plan(doc, &data, data_dir, fixtures_dir, design_md, &mut notes) {
         Ok(f) => f,
         Err(e) => return refuse(preview, format!("save failed, nothing changed: {e}")),
     };
@@ -104,6 +173,8 @@ pub fn save(doc: &ZoneDoc, base: Option<&str>, data_dir: &Path, fixtures_dir: &P
             reason: None,
             stale: false,
             base: fresh.zone(&doc.id).map(|z| doc::fingerprint(&fresh, z)),
+            synced,
+            notes,
         },
         Err(e) => SaveResult {
             preview,
@@ -114,6 +185,8 @@ pub fn save(doc: &ZoneDoc, base: Option<&str>, data_dir: &Path, fixtures_dir: &P
             )),
             stale: false,
             base: None,
+            synced,
+            notes,
         },
     }
 }
@@ -125,12 +198,15 @@ struct Planned {
     text: String,
 }
 
-/// Render every file the save writes, in write order, without touching the disk.
+/// Render every file the save writes, in write order, without touching the disk. A `design_md` that does not
+/// exist is skipped with a note (temp-dir copies); one that exists must hold the zone's block.
 fn plan(
     doc: &ZoneDoc,
     data: &GameData,
     data_dir: &Path,
     fixtures_dir: &Path,
+    design_md: &Path,
+    notes: &mut Vec<String>,
 ) -> Result<Vec<Planned>, String> {
     let mut files = Vec::new();
 
@@ -184,6 +260,47 @@ fn plan(
             path,
             text,
         });
+    }
+
+    // DESIGN.md: the zone's ASCII map block, then its numbers and cells in the §3.2 / §3.3 tables
+    let name = design_md
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| design_md.display().to_string());
+    if design_md.is_file() {
+        let text = std::fs::read_to_string(design_md)
+            .map_err(|e| format!("{}: {e}", design_md.display()))?;
+        let text = design_md::rewrite(&text, &doc.id, &doc.rows)?;
+        let zone = applied
+            .zone(&doc.id)
+            .ok_or_else(|| format!("the applied data has no zone {:?}", doc.id))?;
+        let parsed = undercroft_data::parse_zone(zone).map_err(|e| e.to_string())?;
+        let stats = doc::preview_applied(&applied, &doc.id)
+            .validation
+            .and_then(|v| v.stats)
+            .ok_or_else(|| format!("{}: the validator produced no stats for the tables", doc.id))?;
+        let facts = design_md::ZoneFacts {
+            zone,
+            entry: parsed.stairs.map(|s| s.marker.cell()),
+            water: parsed
+                .cells
+                .iter()
+                .filter(|&&k| k == undercroft_data::CellKind::Water)
+                .count() as i64,
+            npcs: &applied.npcs,
+            stats: &stats,
+        };
+        let text = design_md::rewrite_tables(&text, &facts, notes)?;
+        files.push(Planned {
+            path: design_md.to_path_buf(),
+            label: name,
+            text,
+        });
+    } else {
+        notes.push(format!(
+            "{name} not found at {}: the map block was not rewritten",
+            design_md.display()
+        ));
     }
     Ok(files)
 }
@@ -313,7 +430,13 @@ mod tests {
         let data = GameData::from_dir(&data_dir).expect("loads");
         let u = data.zone("undercroft").expect("undercroft");
         let doc = ZoneDoc::from_zone(u);
-        let r = save(&doc, None, &data_dir, &fixtures_dir);
+        let r = save(
+            &doc,
+            None,
+            &data_dir,
+            &fixtures_dir,
+            &root.join("DESIGN.md"),
+        );
         assert!(r.saved, "{:?}", r.reason);
         assert_eq!(r.reason, None);
         assert_eq!(r.preview.parse_error, None);
@@ -329,6 +452,14 @@ mod tests {
                 "fixtures/source.json",
                 "fixtures/validate_all.json",
             ]
+        );
+        assert!(r.synced.is_empty(), "{:?}", r.synced);
+        assert_eq!(
+            r.notes,
+            vec![format!(
+                "DESIGN.md not found at {}: the map block was not rewritten",
+                root.join("DESIGN.md").display()
+            )]
         );
         let after = snapshot(&root);
         for (path, bytes) in &before {
@@ -357,7 +488,13 @@ mod tests {
                 *v = to;
             }
         }
-        let r = save(&moved, None, &data_dir, &fixtures_dir);
+        let r = save(
+            &moved,
+            None,
+            &data_dir,
+            &fixtures_dir,
+            &root.join("DESIGN.md"),
+        );
         assert!(r.saved, "{:?}", r.reason);
         assert!(r.written.contains(&"data/npcs.ron".to_string()));
         let after = snapshot(&root);
@@ -426,7 +563,13 @@ mod tests {
         let after_move = snapshot(&root);
         let mut bad = moved.clone();
         bad.rows[3].pop();
-        let r = save(&bad, None, &data_dir, &fixtures_dir);
+        let r = save(
+            &bad,
+            None,
+            &data_dir,
+            &fixtures_dir,
+            &root.join("DESIGN.md"),
+        );
         assert!(!r.saved && r.preview.parse_error.is_some());
         assert!(r.reason.as_deref().unwrap_or("").contains("does not parse"));
         assert!(r.written.is_empty());
@@ -456,7 +599,13 @@ mod tests {
 
         // the fixtures cannot be derived: nothing is written, not even the txt / zones.ron
         let doc = doc_without_spawn(&data);
-        let r = save(&doc, None, &data_dir, &fixtures_dir);
+        let r = save(
+            &doc,
+            None,
+            &data_dir,
+            &fixtures_dir,
+            &root.join("DESIGN.md"),
+        );
         assert!(!r.saved && !r.stale);
         assert_eq!(r.preview.parse_error, None, "the map itself parses");
         assert!(!r.preview.validation.as_ref().expect("validation").ok);
@@ -485,7 +634,13 @@ mod tests {
         set_char(&mut moved.rows, from, '.');
         set_char(&mut moved.rows, to, 'H');
         moved.anchors.insert("hunter".into(), to);
-        let r = save(&moved, None, &data_dir, &root.join("nowhere"));
+        let r = save(
+            &moved,
+            None,
+            &data_dir,
+            &root.join("nowhere"),
+            &root.join("DESIGN.md"),
+        );
         assert!(!r.saved, "{:?}", r.reason);
         let reason = r.reason.as_deref().unwrap_or("");
         assert!(reason.contains("nothing changed"), "{reason}");
@@ -498,7 +653,13 @@ mod tests {
 
         // a fixture that does not parse refuses the save instead of regenerating from the workspace copy
         std::fs::write(fixtures_dir.join("ossuary.json"), "{not json").unwrap();
-        let r = save(&moved, None, &data_dir, &fixtures_dir);
+        let r = save(
+            &moved,
+            None,
+            &data_dir,
+            &fixtures_dir,
+            &root.join("DESIGN.md"),
+        );
         assert!(!r.saved);
         let reason = r.reason.as_deref().unwrap_or("");
         assert!(
@@ -516,7 +677,13 @@ mod tests {
         .unwrap();
 
         // and the same move saves once everything is in place
-        let r = save(&moved, None, &data_dir, &fixtures_dir);
+        let r = save(
+            &moved,
+            None,
+            &data_dir,
+            &fixtures_dir,
+            &root.join("DESIGN.md"),
+        );
         assert!(r.saved, "{:?}", r.reason);
         let fresh = GameData::from_dir(&data_dir).expect("loads");
         assert_eq!(fresh.zone("undercroft").unwrap().anchor("hunter"), Some(to));
@@ -545,7 +712,13 @@ mod tests {
         std::fs::write(&path, &edited).unwrap();
         let before = snapshot(&root);
 
-        let r = save(&doc, Some(&base), &data_dir, &fixtures_dir);
+        let r = save(
+            &doc,
+            Some(&base),
+            &data_dir,
+            &fixtures_dir,
+            &root.join("DESIGN.md"),
+        );
         assert!(!r.saved && r.stale, "{:?}", r.reason);
         assert!(r
             .reason
@@ -561,7 +734,13 @@ mod tests {
             .contains("Renamed By Hand"));
 
         // with the fresh base the (now stale) doc saves and overwrites the hand edit, explicitly
-        let r = save(&doc, Some(&now), &data_dir, &fixtures_dir);
+        let r = save(
+            &doc,
+            Some(&now),
+            &data_dir,
+            &fixtures_dir,
+            &root.join("DESIGN.md"),
+        );
         assert!(r.saved, "{:?}", r.reason);
         assert!(!std::fs::read_to_string(&path)
             .unwrap()
@@ -573,8 +752,26 @@ mod tests {
         );
 
         // the same doc with the same base saves again (a no-op) and without a base the check is skipped
-        assert!(save(&doc, Some(&base), &data_dir, &fixtures_dir).saved);
-        assert!(save(&doc, None, &data_dir, &fixtures_dir).saved);
+        assert!(
+            save(
+                &doc,
+                Some(&base),
+                &data_dir,
+                &fixtures_dir,
+                &root.join("DESIGN.md")
+            )
+            .saved
+        );
+        assert!(
+            save(
+                &doc,
+                None,
+                &data_dir,
+                &fixtures_dir,
+                &root.join("DESIGN.md")
+            )
+            .saved
+        );
 
         // npcs.ron cells are part of the fingerprint too
         let npath = data_dir.join("npcs.ron");
@@ -583,8 +780,194 @@ mod tests {
         let needle = format!("cell: ({}, {})", cell[0], cell[1]);
         assert!(ntext.contains(&needle));
         std::fs::write(&npath, ntext.replacen(&needle, "cell: (9, 9)", 1)).unwrap();
-        let r = save(&doc, Some(&base), &data_dir, &fixtures_dir);
+        let r = save(
+            &doc,
+            Some(&base),
+            &data_dir,
+            &fixtures_dir,
+            &root.join("DESIGN.md"),
+        );
         assert!(r.stale && !r.saved);
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn a_wrong_shortcut_saves_is_corrected_to_the_measured_detour() {
+        let root = scratch("saves");
+        let data_dir = root.join("data");
+        let fixtures_dir = root.join("fixtures");
+        let design = root.join("DESIGN.md");
+        let data = GameData::from_dir(&data_dir).expect("loads");
+        let u = data.zone("undercroft").expect("undercroft");
+        let measured: BTreeMap<String, i32> =
+            undercroft_sim::validate::validate_zone(&data, u, None)
+                .stats
+                .expect("stats")
+                .shortcuts
+                .iter()
+                .map(|s| (s.id.clone(), s.detour))
+                .collect();
+        assert!(measured.len() >= 3);
+        let mut doc = ZoneDoc::from_zone(u);
+        let id = doc.shortcuts[1].id.clone();
+        let right = measured[&id];
+        assert_eq!(
+            doc.shortcuts[1].saves, right,
+            "the workspace data is in sync"
+        );
+        doc.shortcuts[1].saves = right + 7;
+
+        let r = save(&doc, None, &data_dir, &fixtures_dir, &design);
+        assert!(r.saved, "{:?}", r.reason);
+        assert_eq!(
+            r.synced,
+            vec![SavesSync {
+                id: id.clone(),
+                from: right + 7,
+                to: right
+            }]
+        );
+        assert!(
+            r.notes
+                .contains(&format!("{id} saves {} -> {right}", right + 7)),
+            "{:?}",
+            r.notes
+        );
+        let fresh = GameData::from_dir(&data_dir).expect("loads");
+        let fu = fresh.zone("undercroft").expect("undercroft");
+        for sc in &fu.shortcuts {
+            assert_eq!(
+                sc.saves, measured[&sc.id],
+                "{}: zones.ron agrees with the detour",
+                sc.id
+            );
+        }
+        let stats = r
+            .preview
+            .validation
+            .expect("validation")
+            .stats
+            .expect("stats");
+        for s in &stats.shortcuts {
+            assert_eq!(s.saves, s.detour, "{}: the response stats agree", s.id);
+        }
+        let all: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(fixtures_dir.join("validate_all.json")).unwrap())
+                .unwrap();
+        for s in all["zones"]["undercroft"]["stats"]["shortcuts"]
+            .as_array()
+            .unwrap()
+        {
+            assert_eq!(
+                s["saves"], s["detour"],
+                "{}: validate_all.json agrees",
+                s["id"]
+            );
+        }
+        let fixture: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(fixtures_dir.join("undercroft.json")).unwrap())
+                .unwrap();
+        let mut seen = 0;
+        for s in fixture["markers"]["shortcuts"].as_array().unwrap() {
+            if s["id"] == serde_json::Value::String(id.clone()) {
+                assert_eq!(
+                    s["saves"],
+                    serde_json::json!(right),
+                    "undercroft.json agrees"
+                );
+                seen += 1;
+            }
+        }
+        assert!(seen > 0, "the door is in the fixture");
+        // the doc as sent is not what is on disk, but the doc with the corrected saves is a no-op now
+        let mut corrected = doc.clone();
+        corrected.shortcuts[1].saves = right;
+        let r = save(&corrected, None, &data_dir, &fixtures_dir, &design);
+        assert!(
+            r.saved && r.synced.is_empty(),
+            "{:?} {:?}",
+            r.reason,
+            r.synced
+        );
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn design_md_map_block_follows_the_save() {
+        let root = scratch("design");
+        let data_dir = root.join("data");
+        let fixtures_dir = root.join("fixtures");
+        let design = root.join("DESIGN.md");
+        std::fs::copy(
+            design_md::default_path(&GameData::workspace_data_dir()),
+            &design,
+        )
+        .expect("copy DESIGN.md");
+        let original = std::fs::read(&design).unwrap();
+        let data = GameData::from_dir(&data_dir).expect("loads");
+        let u = data.zone("undercroft").expect("undercroft");
+        let doc = ZoneDoc::from_zone(u);
+
+        // a no-op save lists DESIGN.md and leaves it byte-identical
+        let r = save(&doc, None, &data_dir, &fixtures_dir, &design);
+        assert!(r.saved, "{:?}", r.reason);
+        assert_eq!(r.written.last().map(String::as_str), Some("DESIGN.md"));
+        assert!(r.notes.is_empty(), "{:?}", r.notes);
+        assert_eq!(std::fs::read(&design).unwrap(), original);
+        assert!(!root.join(".DESIGN.md.tmp").exists());
+
+        // one changed row changes exactly that line of the block
+        let mut changed = doc.clone();
+        let z = changed
+            .rows
+            .iter()
+            .position(|r| r.contains(".."))
+            .expect("a row with floor");
+        let x = changed.rows[z].find("..").unwrap();
+        set_char(&mut changed.rows, [x as i32, z as i32], 'D');
+        let r = save(&changed, None, &data_dir, &fixtures_dir, &design);
+        assert!(r.saved, "{:?}", r.reason);
+        let now = std::fs::read_to_string(&design).unwrap();
+        let old = String::from_utf8(original.clone()).unwrap();
+        let diffs: Vec<(usize, &str, &str)> = old
+            .lines()
+            .zip(now.lines())
+            .enumerate()
+            .filter(|(_, (a, b))| a != b)
+            .map(|(i, (a, b))| (i + 1, a, b))
+            .collect();
+        assert_eq!(diffs.len(), 1, "{diffs:?}");
+        assert_eq!(diffs[0].1, format!("{z:3} {}", doc.rows[z]));
+        assert_eq!(diffs[0].2, format!("{z:3} {}", changed.rows[z]));
+        let heading = old
+            .lines()
+            .position(|l| l.starts_with("#### ") && l.contains("(`maps/undercroft.txt`)"))
+            .unwrap()
+            + 1;
+        assert_eq!(diffs[0].0, heading + 4 + z);
+        assert_eq!(old.lines().count(), now.lines().count());
+
+        // a DESIGN.md without the zone's block refuses the whole save and nothing changes
+        let before = snapshot(&root);
+        std::fs::write(&design, "# no maps here\n").unwrap();
+        let before_design = snapshot(&root);
+        let mut again = changed.clone();
+        set_char(&mut again.rows, [x as i32 + 1, z as i32], 'D');
+        let r = save(&again, None, &data_dir, &fixtures_dir, &design);
+        assert!(!r.saved, "{:?}", r.reason);
+        let reason = r.reason.as_deref().unwrap_or("");
+        assert!(
+            reason.contains("nothing changed") && reason.contains("DESIGN.md"),
+            "{reason}"
+        );
+        assert!(r.written.is_empty());
+        assert_eq!(snapshot(&root), before_design);
+        assert_eq!(
+            before[Path::new("data/maps/undercroft.txt")],
+            before_design[Path::new("data/maps/undercroft.txt")]
+        );
 
         std::fs::remove_dir_all(&root).ok();
     }

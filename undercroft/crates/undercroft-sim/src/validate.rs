@@ -1416,39 +1416,52 @@ mod tests {
     }
 
     #[test]
-    fn design_route_lengths_are_reproduced() {
-        // DESIGN.md §3.3: route shut → open per zone, and the ≤ 70 % rule
+    fn route_and_shortcut_rules_hold_in_every_zone() {
+        // DESIGN.md §3.3 (route shut → open) and §3.2 (what each door saves). The numbers themselves are
+        // pinned by assets/fixtures/validate_all.json (validate_all_is_clean_and_reproduces_the_fixture);
+        // this checks the rules they must obey for every zone and every door without quoting any of them,
+        // so a map edit that keeps the rules needs no change here.
         let d = data();
         let all = validate_all(&d, None);
-        let want = [
-            ("undercroft", 952, 638),
-            ("cistern", 1002, 678),
-            ("ossuary", 1082, 638),
-            ("source", 1926, 1086),
-        ];
-        for (id, closed, open) in want {
+        for z in &d.zones {
+            let id = z.id.as_str();
             let r = all.zone(id).expect(id);
             let s = r.stats.as_ref().expect("stats");
             let route = s.route.expect("route");
-            assert_eq!((route.closed, route.open), (closed, open), "{id}");
             assert!(
                 route.open as f64 <= route.closed as f64 * 0.7,
-                "{id} open ratio"
+                "{id} open ratio: {route:?}"
             );
-            let z = d.zone(id).expect(id);
-            assert!(route.closed >= z.targets.route, "{id} route floor");
-        }
-        // the three Undercroft doors and what they save (DESIGN.md §3.2 table)
-        let u = all.zone("undercroft").expect("undercroft");
-        let sc = &u.stats.as_ref().expect("stats").shortcuts;
-        let saves: Vec<(&str, i32)> = sc.iter().map(|s| (s.id.as_str(), s.detour)).collect();
-        assert_eq!(
-            saves,
-            vec![("u_navedoor", 74), ("u_wingstair", 80), ("u_rood", 154)]
-        );
-        for s in sc {
-            assert_eq!(s.detour, s.saves, "{}: saves is the measured detour", s.id);
-            assert!(s.d_open > s.d_barred, "{}: openFrom is the far side", s.id);
+            assert!(
+                route.closed >= z.targets.route,
+                "{id} route floor: {} < {}",
+                route.closed,
+                z.targets.route
+            );
+            // one measured door per declared door, in declaration order
+            let declared: Vec<&str> = z.shortcuts.iter().map(|s| s.id.as_str()).collect();
+            let measured: Vec<&str> = s.shortcuts.iter().map(|s| s.id.as_str()).collect();
+            assert_eq!(measured, declared, "{id} shortcut order");
+            for (sc, def) in s.shortcuts.iter().zip(&z.shortcuts) {
+                assert_eq!(sc.cells, def.cells, "{id}/{}: cells", sc.id);
+                assert_eq!(sc.open_from, def.open_from, "{id}/{}: openFrom", sc.id);
+                assert_eq!(sc.saves, def.saves, "{id}/{}: stats echo saves", sc.id);
+                assert!(
+                    sc.detour > 0,
+                    "{id}/{}: flanks connect with the door shut",
+                    sc.id
+                );
+                assert_eq!(
+                    sc.detour, sc.saves,
+                    "{id}/{}: zones.ron saves must be the measured detour",
+                    sc.id
+                );
+                assert!(
+                    sc.d_open > sc.d_barred,
+                    "{id}/{}: openFrom is the far side",
+                    sc.id
+                );
+            }
         }
     }
 
@@ -1513,25 +1526,52 @@ mod tests {
         assert!(!r.errors.iter().any(|e| e.contains("loot.")));
     }
 
+    fn opposite(f: Facing) -> Facing {
+        match f {
+            Facing::N => Facing::S,
+            Facing::S => Facing::N,
+            Facing::E => Facing::W,
+            Facing::W => Facing::E,
+        }
+    }
+
     #[test]
     fn negative_control_shortcut_barred_from_the_near_side() {
-        // flip a door's openFrom: the near side becomes the open side → [v2] error on a strict grid
+        // flip a door's openFrom: the near side becomes the open side → [v2] error on a strict grid.
+        // The expected distances are the committed map's own measurement of the door, swapped.
         let d = data();
         let (z, _) = undercroft_rows(&d);
+        let idx = z
+            .shortcuts
+            .iter()
+            .position(|s| s.id == "u_rood")
+            .expect("u_rood");
+        let clean = validate_zone(&d, &z, None);
+        assert!(clean.ok, "{:?}", clean.errors);
+        let before = clean.stats.as_ref().expect("stats").shortcuts[idx].clone();
+        assert!(
+            before.d_open > before.d_barred,
+            "the committed door is barred on the near side"
+        );
+        let flipped = opposite(before.open_from);
         let mut broken = z.clone();
-        let door = &mut broken.shortcuts[2]; // u_rood, openFrom N
-        assert_eq!(door.id, "u_rood");
-        door.open_from = Facing::S;
+        broken.shortcuts[idx].open_from = flipped;
         let r = validate_zone(&d, &broken, None);
         assert!(!r.ok);
         let msg = format!(
-            "{}: [v2] shortcut 'u_rood' openFrom 'S' is the NEARER side (45 vs 139 cells from the entry) — bar the near side",
-            z.name
+            "{}: [v2] shortcut 'u_rood' openFrom '{}' is the NEARER side ({} vs {} cells from the entry) — bar the near side",
+            z.name,
+            facing_letter(flipped),
+            before.d_barred,
+            before.d_open
         );
         assert!(r.errors.contains(&msg), "{:?}", r.errors);
-        // the measured door still reports the (swapped) flank distances
-        let s = &r.stats.as_ref().expect("stats").shortcuts[2];
-        assert_eq!((s.d_barred, s.d_open, s.detour), (139, 45, 154));
+        // the measured door still reports the (swapped) flank distances; the detour does not change
+        let s = &r.stats.as_ref().expect("stats").shortcuts[idx];
+        assert_eq!(
+            (s.d_barred, s.d_open, s.detour),
+            (before.d_open, before.d_barred, before.detour)
+        );
         // on a non-strict grid the same fault is only a warning
         let lax = validate_zone(&d, &broken, Some(false));
         assert!(lax.ok);

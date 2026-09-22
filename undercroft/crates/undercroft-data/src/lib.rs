@@ -413,6 +413,9 @@ mod tests {
 
     #[test]
     fn zones_match_the_prototype() {
+        // Literal here = the RON's own contract (ids, order, size, how many regions/doors/creatures, requires,
+        // palette, the hub); anything the map editor can move (cells, loot, water, creature order) is
+        // checked against the map it must agree with instead of being quoted.
         let d = data();
         assert_eq!(d.zones.len(), 4);
         let ids: Vec<&str> = d.zones.iter().map(|z| z.id.as_str()).collect();
@@ -423,8 +426,21 @@ mod tests {
         assert!(u.rows.iter().all(|r| r.len() == 62));
         assert_eq!(u.regions.len(), 13);
         assert_eq!(u.shortcuts.len(), 3);
-        assert_eq!(u.anchor("entry"), Some([31, 58]));
-        assert_eq!(u.anchor("shortcuts.u_rood"), Some([53, 36]));
+        let um = parse_zone(u).expect("parse");
+        // anchor paths: `entry` is the S cell, `shortcuts.<id>` one of that door's `=` cells, and a path that
+        // is not declared resolves to nothing
+        let entry = um.stairs.expect("S cell");
+        assert_eq!(u.anchor("entry"), Some([entry.marker.cx, entry.marker.cz]));
+        for sc in &u.shortcuts {
+            let a = u.anchor(&format!("shortcuts.{}", sc.id));
+            assert!(
+                a.is_some_and(|a| sc.cells.contains(&a)),
+                "{}: anchor {a:?} is not one of its cells {:?}",
+                sc.id,
+                sc.cells
+            );
+        }
+        assert_eq!(u.anchor("shortcuts.nowhere"), None);
         // maps.js:speeds — an unknown profile name resolves to `base`
         assert_eq!(
             u.hunter_profile_names(&d.config),
@@ -433,21 +449,46 @@ mod tests {
         let mut typo = u.clone();
         typo.hunters = vec!["fast".into(), "fastt".into()];
         assert_eq!(typo.hunter_profile_names(&d.config), vec!["fast", "base"]);
-        assert_eq!(u.npcs["deacon"], [4, 5]);
-        assert_eq!(u.loot.oil, 10);
+        // the deacon's declared cell is one of the map's N cells
+        let deacon = u.npcs["deacon"];
+        assert!(
+            um.npc_cells.iter().any(|n| [n.cx, n.cz] == deacon),
+            "deacon at {deacon:?} has no N"
+        );
+        // the declared loot is what the map holds
+        let count = |m: &ParsedMap, k: crate::tables::ItemKind| {
+            m.items.iter().filter(|i| i.kind == k).count() as u32
+        };
+        assert_eq!(
+            (u.loot.oil, u.loot.relic, u.loot.rich),
+            (
+                count(&um, crate::tables::ItemKind::Oil),
+                count(&um, crate::tables::ItemKind::Relic),
+                count(&um, crate::tables::ItemKind::Rich)
+            )
+        );
         assert!(u.requires.is_none());
         let c = d.zone("cistern").expect("cistern");
         assert_eq!(c.size, 64);
         let m = parse_zone(c).expect("parse");
         let water = m.cells.iter().filter(|&&k| k == CellKind::Water).count();
-        assert_eq!(water, 1588);
-        assert_eq!(m.creatures.len(), 2);
-        assert_eq!(m.creatures[0].kind, CreatureKind::Drowner);
+        assert!(water > 0, "the cistern has water");
+        // zones.ron `creatures` is in the map's row-major creature order (§5.7)
+        let declared: Vec<CreatureKind> = c.creatures.iter().map(|cr| cr.kind).collect();
+        let on_map: Vec<CreatureKind> = m.creatures.iter().map(|cr| cr.kind).collect();
+        assert_eq!(on_map, declared);
+        assert!(declared.contains(&CreatureKind::Drowner));
         assert_eq!(
             c.requires.as_ref().and_then(|r| r.building.clone()),
             Some("tram".into())
         );
-        assert_eq!(c.anchor("hunters[1]"), Some([30, 40]));
+        // `hunters[1]` indexes the second cell of a `Cells` anchor
+        match &c.anchors["hunters"] {
+            crate::zone::Anchor::Cells(cells) => {
+                assert_eq!(c.anchor("hunters[1]"), Some(cells[1]))
+            }
+            other => panic!("hunters anchor is {other:?}"),
+        }
         let o = d.zone("ossuary").expect("ossuary");
         assert_eq!(o.entry, EntryKind::Elevator);
         assert_eq!(o.burn_mul, 1.3);

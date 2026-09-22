@@ -41,7 +41,7 @@ wants 8 GB+; after that our crates rebuild in seconds (the `dev` feature links B
 Always `export PATH="$HOME/.cargo/bin:$PATH"` and work from this directory.
 
 ```sh
-cargo test                                                     # data + sim + editor, 149 tests, ~1 min cold
+cargo test                                                     # data + sim + editor, 162 tests, ~1 min cold
 cargo test -p undercroft --features dev                        # app: 164 unit + 10 integration, headless
 cargo clippy --workspace --all-targets --features undercroft/dev -- -D warnings
 cargo fmt --all -- --check
@@ -86,14 +86,23 @@ rendered first, then written by temp-file + rename, and a failure rolls the rest
 the hub is not editable here.
 
 A save writes, in order: `assets/data/maps/<id>.txt`; `assets/data/zones.ron` (the whole file,
-header comment kept, so a moved NPC / gate / spot / shortcut door / anchor cell follows the grid);
-`assets/data/npcs.ron` only when an NPC cell changed; then it regenerates
-`assets/fixtures/{undercroft,cistern,ossuary,source}.json` and `assets/fixtures/validate_all.json`
-from the sim (the hub fixtures are untouched), so the fixture-driven tests stay green. What it does
-**not** touch: the tables in DESIGN.md (§3.2 maps and door/route numbers, §3.3, §3.4) and the handful
-of tests that pin literal cells or route lengths (`zones_match_the_prototype`,
-`caught_sinks_and_returns_to_the_cell`, `design_route_lengths_are_reproduced`) — after a map change,
-fix those by hand in the same commit.
+header comment kept, so a moved NPC / gate / spot / shortcut door / anchor cell follows the grid, and
+every shortcut's `saves` is set to the detour the validator measured, so `zones.ron`, the fixture and
+the stats agree — the status line reports `u_rood saves 152 -> 154`); `assets/data/npcs.ron` only
+when an NPC cell changed; then it regenerates `assets/fixtures/{undercroft,cistern,ossuary,source}.json`
+and `assets/fixtures/validate_all.json` from the sim (the hub fixtures are untouched), so the
+fixture-driven tests stay green; and last `DESIGN.md` (the file next to `assets/`, `UNDERCROFT_DESIGN_MD`
+overrides, skipped with a note when it is missing): the zone's ASCII map block, and every number and
+`(x,y)` the tables quote for the zone — its §3.2 row (entry, walkable, captive and gate cells), its
+"Contract spots" segment, its shortcut rows (cells, `opens from`, detour, route) and its §3.3 row
+(walkable, walls %, pillars, water, route and the percentage) — spliced in place, the prose around them
+kept; the hub block is never touched. `design_md_matches_the_data` in `undercroft-data` reads the same
+tables and map blocks and fails naming the DESIGN.md line, the documented value and the data value, so
+a stale number cannot reach a commit. The tests of the sim and data crates read the maps' cells and the
+validator's numbers from the data rather than pinning them, so after a save `cargo test` is green with no
+hand edit. What still needs a hand: DESIGN.md prose about a place (the §3.4 region notes, a door's
+"links" text, a captive's name) and anything the save reports in a note (a captive the table names that
+no NPC carries, a door the table lists that `zones.ron` does not have).
 
 ### Scripted runs and screenshots
 
@@ -122,10 +131,14 @@ save store); `crates/undercroft/tests/skeleton.rs` shows the idioms (`send`, `st
 - **Data.** Edit `assets/data/*.ron` and `maps/*.txt` directly; each file's first line names the
   Rust type it must parse as, and `every_ron_file_parses` in `undercroft-data` reports a bad edit by
   file and line. For the zone maps the easy way is the map editor (`cargo run -p undercroft-editor`,
-  see Run): it keeps `zones.ron` / `npcs.ron` in step with the grid and regenerates the fixtures. The maps and `config.ron` hot-reload natively under `dev`. The fixtures under
-  `assets/fixtures/` pin the prototype's numbers, so a deliberate tuning or map change that breaks a
-  fixture test must update the fixture in the same commit. When a number changes, fix it in
-  DESIGN.md too.
+  see Run): it keeps `zones.ron` / `npcs.ron` in step with the grid (shortcut `saves` = the measured
+  detour), regenerates the fixtures and rewrites the zone's map block and table numbers in DESIGN.md,
+  so a map save needs no hand edit beyond prose (§3.4 region notes). A hand edit to a map or a table
+  that shifts a number is caught by `design_md_matches_the_data`, which names the stale DESIGN.md line.
+  The maps and `config.ron` hot-reload natively under `dev`. The fixtures under
+  `assets/fixtures/` pin the prototype's numbers, so a deliberate tuning change that breaks a
+  fixture test must update the fixture in the same commit (the editor does this for map changes).
+  When a number changes, fix it in DESIGN.md too.
 - **Modes.** Inside `FixedUpdate` always read the mode through `state::Mode` (the pending state
   wins), never `State<GameMode>` directly; two bugs came from that.
 - **Writers.** Lanes only push `DebugCommand`s to change game state; `run.rs` / `player.rs` are the
