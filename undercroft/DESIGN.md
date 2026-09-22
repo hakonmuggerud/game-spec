@@ -71,22 +71,22 @@ hub progress persists.
 
 | id | name | grid | entry | walkable | burn | lamp | hunters | captives | gate (tool → opens) | requires |
 |---|---|---|---|---|---|---|---|---|---|---|
-| `undercroft` | The Undercroft | 62×62 | S (31,58) | 2401 | ×1 | ×1 | 1 base (28,44) + Warden (42,10) E + Brute (5,42) leash 14 | Wick (4,47), Deacon (4,5) | Pry Bar → X (15,6), NW crypt | — |
+| `undercroft` | The Undercroft | 62×62 | S (31,58) | 2394 | ×1 | ×1 | 1 base (28,44) + Warden (42,10) E + Brute (5,42) leash 14 | Wick (4,47), Deacon (4,5) | Pry Bar → X (15,6), NW crypt | — |
 | `cistern` | The Cistern | 64×64 | S (32,60) | 2832 | ×1 | ×1 | 2 base (20,17) (30,40) + Drowner (31,29) + Lampwight (46,52) | Ines (60,52) | Sluice Key → X (16,6), flooded vault | building `tram` |
 | `ossuary` | The Ossuary | 62×62 | V (7,58) | 1407 | ×1.3 | ×0.85 | 1 fast (31,37) + Warden (19,9) N `gateOk` + false lights (22,22) (52,38) | Oren (5,7) | Censer → X (15,7), reliquary | building `elevator` + lightTech ≥ 2 |
 | `source` | The Source | 60×60 | V (2,2) | 2288 | bands | bands | 2 fast (7,20) (17,25) (+§9) + Brute (30,23) lap 4 + false light (41,26) lap 3 + Lampwight (13,30) lap 2 | — | — | flame tier 4 + Deacon rescued; no banking |
 
 Loot per full clear: Undercroft 10o+8r+3R = 49 · Cistern 7o+8r+4R = 51 · Ossuary 10o+11r+7R = 78 · Source 8o+3r+3R = 32.
-Items respawn each expedition. Contract spots: Undercroft (48,10) NE crypt, (31,47) great hall · Cistern (33,45) drowned hall,
+Items respawn each expedition. Contract spots: Undercroft (48,10) NE crypt, (25,44) great hall · Cistern (33,45) drowned hall,
 (5,53) pump room · Ossuary (50,21) east bone-pit, (30,49) south vault.
 
 Shortcuts (`=`, §3.6 — barred from the entrance side, lifted with `E` from `openFrom` only, permanent):
 
 | zone | shortcut | cells | opens from | links | detour removed | full-clear route: shut → all open |
 |---|---|---|---|---|---|---|
-| undercroft | `u_navedoor` The Nave Door | (37,55) (37,56) | E | Stair Head ↔ the nave's deep south apron | 74 | 952 → 640 cells |
+| undercroft | `u_navedoor` The Nave Door | (37,55) (37,56) | E | Stair Head ↔ the nave's deep south apron | 74 | 952 → 638 cells |
 | undercroft | `u_wingstair` The Wing Stair | (7,36) | N | West Wing ↔ West Bay | 80 | |
-| undercroft | `u_rood` The Rood Door | (53,36) | N | Collapsed Nave ↔ East Bay | 152 | |
+| undercroft | `u_rood` The Rood Door | (53,36) | N | Collapsed Nave ↔ East Bay | 154 | |
 | cistern | `c_bulkhead` The West Bulkhead | (25,52) (25,53) | W | Tram Landing ↔ Sunken Nave → the whole west half | 214 | 1002 → 678 cells |
 | cistern | `c_screen` The East Screen | (40,52) | E | Tram Landing ↔ Filter Beds → Ines, the sump | 144 | |
 | cistern | `c_sluice` The Sluice Screen | (12,45) | W | the quay ↔ West Channels | 92 | |
@@ -110,36 +110,36 @@ Each zone's named regions, deep pockets and per-region loot split are §3.4 (and
   3 #DD#DD#DD#DD#DD#DD#DD#DD#DD#DD#DD#D#DoDDD#DDD#DDD#DDD#DDD#DDD#
   4 #DDDDDDDDDDDDDD#DDDDDDDDDDDDDDDDDDD#DDDDD#DDD#DDD#DDD#DDD#DDD#
   5 #DDDNDDDDDDDDDD#DDDDoDDDDDDDDDDDDDD#DDDDDDDDDDDDDDDDDDDDDDDDD#
-  6 #D#DD#DD#DD#DDDXDDD#DD#DD#DD#DD#DDDDDD####################DDD#
+  6 #DPDDPDDPDDPDDDXDDDPDDPDDPDDPDDPDDDDDD####################DDD#
   7 #DDDDDDDDDDDDDD#DDDDDDDDDDDDDDDDDDD#DDD#DDDD#DDDDDDD#DDD#DDDD#
   8 #DDDDDDDDDDDDDD#DDDDDDDDDDDDDDDDDDD#DDD#DDDD#DDDDDDD#DDD#DDDD#
   9 #DD#DD#DD#DD#DD#DD#DD#DD#DD#DD#DD#D#DDDDDDDDDDDDDDDDDDDDDDDDr#
  10 #Do#DD#DD#DD#DD#DD#DD#DD#DD#DD#rD#D#DDDDDDGDDDDDCDDDDDDDDDDDD#
  11 #DDDDDDDDDDDDDD#DDDDDDDDDDDDDDDDDDD#DDDDDDDDDDDDDDDDDDDDDDDDD#
- 12 ###########################D######################D###########
- 13 #####DDDDDDDD#####...................#.........P...P.........#
- 14 ###DDDDDDDDDDDD###..P..P........P..P.#....P.............P....#
+ 12 #########################DD#######################D###########
+ 13 #####DDDDDDDD#####...................#.......................#
+ 14 ###DDDDDDDDDDDD###..P..P........P..P.#..................P....#
  15 ##DDDPDDDDDPDDDD##......#######......#.......#########.......#
- 16 #DDDDDDDrDDDDDDDD#......#######...o..#....P#.#########..P..o.#
+ 16 #DDDDDDDrDDDDDDDD#......#######...o..#.....#.#########..P..o.#
  17 #DDDDDDDDDDDDRDDD#......#######......#.....#.#########.......#
- 18 ##DDDPDDDDDPDDDD##......#######......#....P#.#########..P....#
+ 18 ##DDDPDDDDDPDDDD##......#######......#.....#.#########..P....#
  19 ###DDDDDDDDDDDD###..P..P........P..P.#.....#.................#
  20 #####DDDDDDDD#####...................#.....#...P...P.........#
  21 #######D###################.#############.####################
- 22 #..............#........#............P.#..........P......#...#
- 23 #..P.......P...#........#......#######.#.................#...#
- 24 #..............#..P.P...#.P.P.P#######.#...P###########.P#...#
- 25 #########......#........#......#######.#....###########..#...#
- 26 #..............#..P.....#......#######.#....###########..#.r.#
- 27 #...P...P...P..#...............#######.#....###########..#...#
+ 22 #..............#........#......#########..........P......#...#
+ 23 #..P.......P...#........#......#########.................#...#
+ 24 #..............#..P.P...#.P...P#########...P###########.P#...#
+ 25 #########......#........#......#########....###########..#...#
+ 26 #..............#..P.....#......#########....###########..#.r.#
+ 27 #...P...P...P..#...............#########....###########..#...#
  28 #......................................#..P.###########......#
  29 #..............#.......................#....###########......#
- 30 #...P...P...P..#......#................#....###########.....P#
- 31 #..............#.####.#...P.P.P...P.P..#....###########......#
- 32 #.....##########.####.#................#...P.................#
- 33 #..............#.####.#................#..........P.....P....#
- 34 #.rP.......P...#.####.#..............o.#.....................#
- 35 #..............#......#................#.....................#
+ 30 #...P...P...P..########................#....###########.....P#
+ 31 #..............########...P.P.P...P.P..#....###########......#
+ 32 #.....#################................#...P.................#
+ 33 #..............########................#..........P.....P....#
+ 34 #.rP.......P...########..............o.#.....................#
+ 35 #..............########................#.....................#
  36 #######=######################.######################=########
  37 #.....#..#....#.........####.....#####.....#.....###.........#
  38 #.r...#..#....#.o.......####.....#####...P.#P....###....P..o.#
@@ -148,14 +148,14 @@ Each zone's named regions, deep pockets and per-region loot split are §3.4 (and
  41 #.....#..#....#..P.P.P.P.P.P.P.P.P.P.##########.##############
  42 #....B........#......................#.......................#
  43 #######..#....#......................#...P...P.....P.....P...#
- 44 #.....#..#..................H................................#
- 45 #.....#..#....#......................#...P...P.....P.....P...#
+ 44 #.....#..#...............C..H................................#
+ 45 #.....#..#....#......................#...................P...#
  46 #........######......................######.###########.######
- 47 #...N.#..#....#..P.P.P.P.P.P.P.C.P.P.#........#..............#
- 48 #.....#.......#####..................#...#....#.....#..#.....#
- 49 #######..#....#####..................#...#....#.....#..#.....#
- 50 #######..#.o..#####.....r..........o.#...#....#.....#..#..r..#
- 51 #######..#....#####..................#...#....#.....#..#.....#
+ 47 #...N.#..#....#..P.P.P.P.P.P.P.P.P.P.#........#..............#
+ 48 #.....#.......#......................#...#....#.....#..#.....#
+ 49 #######..#....#......................#...#....#.....#..#.....#
+ 50 #######..#.o..#.........r..........o.#...#....#.....#..#..r..#
+ 51 #######..#....#......................#...#....#.....#..#.....#
  52 #######..#..P.################.##########################.####
  53 #######..#....###########............##############..........#
  54 #######..#....###########............#DDDDDDDDDDD............#
@@ -387,7 +387,7 @@ three doors lifted, and check 8 requires it to be ≤ 70 % of the shut one.
 
 | zone | grid | cells | walkable (target) | walls (target) | pillars | water | route shut → open | eccentricity |
 |---|---|---|---|---|---|---|---|---|
-| undercroft | 62×62 | 3844 | 2401 (2380) | 35.2 % (35.7) | 89 | — | **952 → 640** (67 %) | 144 |
+| undercroft | 62×62 | 3844 | 2394 (2380) | 35.4 % (35.7) | 89 | — | **952 → 638** (67 %) | 144 |
 | cistern | 64×64 | 4096 | 2832 (2760) | 29.6 % (31.2) | 52 | 1588 (lake body 765) | **1002 → 678** (68 %) | 220 |
 | ossuary | 62×62 | 3844 | 1407 (1420) | 63.4 % (62.7) | 0 | — | **1082 → 638** (59 %) | 334 |
 | source | 60×60 | 3600 | 2288 (2300) | 36.4 % (36.1) | 0 | — | **1926 → 1086** (56 %) | 955 |
@@ -442,9 +442,9 @@ hunter counts are frozen (3 / 4 / 4 / 5 records; the creature tests assert them)
 one on a must-visit region — never from adding more.
 
 **The Undercroft** — 62×62, bands of rows, each wall row carrying that band's doors: z1–11 north crypts (all deep) ·
-z12 wall, two doors only, (27,12) and (50,12) · z13–20 Chapter House / Lantern Well / East Cloister · z21 wall ·
+z12 wall, two doors only, (25–26,12) and (50,12) · z13–20 Chapter House / Lantern Well / East Cloister · z21 wall ·
 z22–35 the three bays, walls at x15 / x39 (only (15,28) is still a door: the x39 arcade has fallen, which is what makes
-the Rood Door worth 152 cells) · z36 wall · z37–51 wing, Great Hall, Collapsed Nave · z52 wall · z53–60 the south.
+the Rood Door worth 154 cells) · z36 wall · z37–51 wing, Great Hall, Collapsed Nave · z52 wall · z53–60 the south.
 One long axis runs the whole map: row z44 from the wing vestibule (x10) through the hall and the length of the nave to
 x60 — the processional aisle and the zone's only long sightline.
 
@@ -564,7 +564,7 @@ Wheel and the Deep Stacks, the Choir and the Antechamber) were built around them
 | Wick `N` | (5,22) | **(4,47)** | the West Wing, past the Brute |
 | Deacon Maud `N` | (2,3) | **(4,5)** | the NW crypt, behind the Pry Bar |
 | Pry Bar `X` | (4,5) | **(15,6)** | the wall column x15, NW ↔ Middle crypt |
-| Undercroft spots 0 / 1 | (30,2) (16,29) | **(48,10)** (31,47) | the NE crypt (83–89 BFS out) · the Great Hall |
+| Undercroft spots 0 / 1 | (30,2) (16,29) | **(48,10)** (25,44) | the NE crypt (83–89 BFS out) · the Great Hall |
 | Cistern entry `S` | (20,37) | **(32,60)** | the tram apron |
 | Cistern base `H` ×2 | (14,7) (29,10) | **(20,17)** (30,40) | causeway floor inside the lake band, 24 and 57 BFS from the entry |
 | Drowner `w` | (20,13) | **(31,29)** | the lake body (765 cells): its flood-fill reaches the quay shore and nothing else |
@@ -1178,7 +1178,7 @@ item spawns at the spot, pick it up and bank it (lost on death like loot); `surv
 
 | id | poster | type | target | reward |
 |---|---|---|---|---|
-| `c_relight` | Wick | plant | Undercroft great hall, spot 1 (31,47) | Pry Bar + 4 pts |
+| `c_relight` | Wick | plant | Undercroft great hall, spot 1 (25,44) | Pry Bar + 4 pts |
 | `c_wick` | Wick | fetch | 4 oil flasks, Undercroft | 60 oil |
 | `c_sound` | Ines | survive 30 s | Cistern drowned hall, spot 0 (33,45), lamp allowed | Sluice Key |
 | `c_chart` | Ines | recover "lost chart" | Cistern pump room, spot 1 (5,53) | 8 pts |
@@ -1255,7 +1255,7 @@ re-authored bigger) and numeric `gatesOpened` entries are dropped (they were 40�
 
 ## 12. Crates, plugins and events
 
-Three crates, "functional core, ECS shell": the sim exposes plain structs and pure functions, Bevy owns entities,
+Three crates (plus the editor tool), "functional core, ECS shell": the sim exposes plain structs and pure functions, Bevy owns entities,
 time and I/O and calls into the sim from `FixedUpdate`. Nothing is mirrored between two worlds. All third-party
 crates are declared once in the root `Cargo.toml`.
 
@@ -1264,6 +1264,7 @@ crates are declared once in the root `Cargo.toml`.
 | `crates/undercroft-data` | serde, ron | the types every `assets/data/*.ron` table deserialises into (`Config`, `ZoneDef`, `Palette`, `ContractTable`, `NpcTable`, `BuildingTable`, `EndgameData`, `ModelTable`), `GameData::from_dir` / `from_reader`, the cell legend, `parse_map` / `parse_zone` / `parse_hub` |
 | `crates/undercroft-sim` | data | `grid` (`idx`, `is_solid`, `los`, `bfs_field`, `path_to`, `route_cells`, `lap_of`), `collision` (`move_with_collision`, `BlockMask`), `pool`, `world` (gates, shortcuts), `validate`, `creature` (the profile table and every FSM, §5.8), `follower` (captives, the follower, hub residents, dialogue), `contracts`, `economy` (light economy, tiers, buildings, services, blessing, the Source run, altar, endings), `save` (`SaveData` and its JSON), `events` (`SimEvent`), `rng` (`SimRng`), `fixtures` (readers for the frozen parity fixtures) |
 | `crates/undercroft` | data, sim, bevy | the app |
+| `crates/undercroft-editor` | data, sim, tiny_http | the map editor (native only, never in the wasm build): `server` (`GET /api/zones`, `POST /api/preview`, `POST /api/save`), `doc` (`ZoneDoc` ⇄ `ZoneDef`, anchors rebuilt from flattened paths), `ron_io` (header-preserving `zones.ron` / `npcs.ron` writer), `fixtures` (regenerates the four zone fixtures + `validate_all.json`, byte-identical on unchanged data), `design_md` (rewrites this file's zone map block and the numbers the §3.2 / §3.3 tables quote, in place), `save` (all-or-nothing, shortcut `saves` synced to the measured detour); `web/index.html` is the page. `undercroft-data`'s `design_md_matches_the_data` test checks those tables and blocks against the data |
 
 The app crate's skeleton files and the five lanes:
 
