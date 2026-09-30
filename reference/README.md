@@ -18,6 +18,9 @@ python3 -m http.server 8765 --bind 0.0.0.0 --directory /home/agent/repos/game-sp
 # http://<host>:8765/undercroft/dist/                 (Bevy wasm build, after `trunk build`)
 ```
 
+Stop the server and close the browser tab when you are done — a tab in the agent-sandbox container's
+Firefox (`docker exec sandbox pkill -f firefox-esr`) outlives the session and holds gigabytes.
+
 `undercroft/tools/qa/proto.mjs` drives it headlessly through `window.__game.actions` with the same
 step list `UNDERCROFT_SCRIPT` takes on the Bevy side, which is how parity screenshots were made;
 its README has the recipe.
