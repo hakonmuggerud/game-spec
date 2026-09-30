@@ -12,6 +12,9 @@ python3 -m http.server 8765 --directory reference/prototype   # from the repo ro
 # then open http://localhost:8765/index.html
 ```
 
+Stop the server and close the tab when you are done (in the agent-sandbox container:
+`docker exec sandbox pkill -f firefox-esr`).
+
 Needs internet (Three.js comes from the jsDelivr CDN) and a desktop browser with WebGL and pointer lock;
 `file://` will not work (ES modules). Click the title screen to lock the mouse and begin. Sound starts on
 the first click/key (browser gesture rule). Progress saves to `localStorage` (`undercroft-v2`).

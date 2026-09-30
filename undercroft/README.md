@@ -55,6 +55,12 @@ the wasm commands use their own target dir.
 
 ## Run
 
+**Clean up when you are done.** Everything in this section is a one-session tool. Before you finish,
+stop every server you started (`http.server`, the map editor, Xvfb) and close every browser you
+opened — including Firefox in the agent-sandbox container (`docker exec sandbox pkill -f firefox-esr`),
+which is not visible from a plain `ps`. A tab left on the wasm build sat there for three weeks
+holding 3.3 GB.
+
 ```sh
 cargo run -p undercroft --features dev          # native; saves to ./undercroft-save.json (UNDERCROFT_SAVE overrides)
 ```
